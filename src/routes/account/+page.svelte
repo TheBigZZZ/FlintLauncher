@@ -14,8 +14,8 @@
         </div>
 
         <div>
-            <button class="text-white text-xl p-3 font-roboto bg-neutral-800 rounded-xl">Manage Profiles</button>
-            <button class="text-natural-900 text-xl p-3 mx-10 font-roboto bg-green-400 rounded-xl shadow-green-400/50 shadow-2xl backdrop-blur-2xl">Add Account</button>
+            <button class="text-white text-xl p-3 font-roboto bg-neutral-800 rounded-xl transition-all hover:bg-neutral-950 active:bg-neutral-900">Manage Profiles</button>
+            <button class="text-natural-900 text-xl p-3 mx-10 font-roboto bg-green-400 rounded-xl shadow-green-400/50 shadow-2xl backdrop-blur-2xl transition-all hover:bg-green-200 active:bg-neutral-400">Add Account</button>
         </div>
     </div>
 
@@ -27,9 +27,9 @@
                 <h3 class="text-3xl text-rubix text-white py-3 font-medium pb-6">{user}</h3>
                 
                 <div class="flex flex-col gap-3">
-                    <button class="bg-neutral-900 text-white text-xl text-roboto font-medium p-2 rounded-lg flex items-center gap-3"><i class="fi fi-rr-fill"></i>Skin Editor</button>
+                    <button class="bg-neutral-900 text-white text-xl text-roboto font-medium p-2 rounded-lg flex items-center gap-3 transition-all hover:bg-neutral-950 active:bg-neutral-900"><i class="fi fi-rr-fill"></i>Skin Editor</button>
 
-            <button class="bg-neutral-900 text-white text-xl text-roboto font-medium p-2 px-2  rounded-lg flex items-center gap-3 hover:bg-neutral-950"><i class="fi fi-rr-sign-out-alt"></i>Sign Out</button>
+            <button class="bg-neutral-900 text-white text-xl text-roboto font-medium p-2 px-2  rounded-lg flex items-center gap-3 transition-all hover:bg-neutral-950 active:bg-neutral-900"><i class="fi fi-rr-sign-out-alt"></i>Sign Out</button>
                 </div>
             </div>
 
