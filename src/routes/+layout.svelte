@@ -8,7 +8,6 @@
     goto('/account')
   }
 
-
 </script>
 
 <main class="flex h-screen">
