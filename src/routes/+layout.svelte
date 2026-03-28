@@ -9,7 +9,7 @@
   }
 
   function goToHome() {
-    goto('/home')
+    goto('/')
   }
 
 
@@ -20,10 +20,10 @@
   <div class="text-center bg-neutral-800 px-5 py-5 flex flex-col w-30 gap-8 shrink-0">
     <div class="font-roboto font-bold text-2xl antialiased text-green-400 text-shadow-lg/30 transition-all hover:animate-ping">F</div>
 
-    <div class="text-gray-500 transition-all duration-300 ease-in-out hover:text-green-400 hover:drop-shadow-green-300 drop-shadow-2xl">
+    <button onclick={goToHome} class="text-gray-500 transition-all duration-300 ease-in-out hover:text-green-400 hover:drop-shadow-green-300 drop-shadow-2xl">
       <i class="fi-rr-home text-xl text-shadow-lg/30"></i>
       <p class="font-rubik text-shadow-lg/30">Home</p>
-    </div>
+    </button>
 
     <div class="text-gray-500 transition-colors ease-in-out hover:text-green-400 block hover:drop-shadow-green-300 drop-shadow-2xl">
       <i class="fi fi-rr-books-medical text-xl text-shadow-lg/30"></i>

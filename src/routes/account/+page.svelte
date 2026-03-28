@@ -17,7 +17,7 @@
     });
 
     function goToAddAccount() {
-        window.location.href = "/account/add";
+        window.location.href = "/account/addAccount";
     }
 </script>
 
