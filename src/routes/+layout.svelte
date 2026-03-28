@@ -8,6 +8,10 @@
     goto('/account')
   }
 
+  function goToHome() {
+    goto('/home')
+  }
+
 
 </script>
 
