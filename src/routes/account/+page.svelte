@@ -1,18 +1,21 @@
 <script>
-    import { createAccount } from "$lib/account";
-    import { progressbar, Progressbar } from "flowbite-svelte";
+    // import { createAccount } from "$lib/account";
+    import { Progressbar } from "flowbite-svelte";
     import { Badge } from "flowbite-svelte";
 
-    let username = $state("");
+    // let username = $state("");
 
-    async function handleConfirm() {
-        try {
-            await createAccount(username);
-            console.log("done");
-        } catch (e) {
-            console.error("failed:", e);
-        }
-    }
+    // async function handleConfirm() {
+    //     try {
+    //         await createAccount(username);
+    //         console.log("done");
+    //     } catch (e) {
+    //         console.error("failed:", e);
+    //     }
+    // }
+
+
+    let username = "Fynr1x"
 </script>
 
 <main>
@@ -33,7 +36,7 @@
             <div class="bg-neutral-800 px-6 rounded-xl">
                 <h1 class="text-xl text-roboto text-green-400 py-2 font-medium">Offline Account</h1>
                 <Badge rounded border large color="green">Active</Badge>
-                <h3 class="text-3xl text-rubix text-white py-3 font-medium pb-6">{user}</h3>
+                <h3 class="text-3xl text-rubix text-white py-3 font-medium pb-6">{username}</h3>
                 
                 <div class="flex flex-col gap-3">
                     <button class="bg-neutral-900 text-white text-xl text-roboto font-medium p-2 rounded-lg flex items-center gap-3"><i class="fi fi-rr-fill"></i>Skin Editor</button>
