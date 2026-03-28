@@ -1,21 +1,18 @@
-<script>
-    // import { createAccount } from "$lib/account";
-    import { Progressbar } from "flowbite-svelte";
-    import { Badge } from "flowbite-svelte";
+<script lang="ts">
+    import { Progressbar, Badge } from "flowbite-svelte";
+    import { invoke } from "@tauri-apps/api/core";
+    import { onMount } from "svelte";
 
-    // let username = $state("");
+    let accounts = $state<string[]>([]);
 
-    // async function handleConfirm() {
-    //     try {
-    //         await createAccount(username);
-    //         console.log("done");
-    //     } catch (e) {
-    //         console.error("failed:", e);
-    //     }
-    // }
-
-
-    let username = "Fynr1x"
+    onMount(async () => {
+        try {
+            accounts = await invoke<string[]>('accountget');
+        } catch (error) {
+            console.error('Failed to load accounts:', error);
+            accounts = [];
+        }
+    });
 </script>
 
 <main>
@@ -31,31 +28,38 @@
         </div>
     </div>
 
-        <div class="grid grid-flow-col grid-cols-auto gap-5 p-5 align-center">
+    <div class="grid grid-flow-col grid-cols-auto gap-5 p-5 align-center">
 
+        <!-- {#each accounts as username}
             <div class="bg-neutral-800 px-6 rounded-xl">
                 <h1 class="text-xl text-roboto text-green-400 py-2 font-medium">Offline Account</h1>
                 <Badge rounded border large color="green">Active</Badge>
                 <h3 class="text-3xl text-rubix text-white py-3 font-medium pb-6">{username}</h3>
-                
-                <div class="flex flex-col gap-3">
-                    <button class="bg-neutral-900 text-white text-xl text-roboto font-medium p-2 rounded-lg flex items-center gap-3"><i class="fi fi-rr-fill"></i>Skin Editor</button>
 
-            <button class="bg-neutral-900 text-white text-xl text-roboto font-medium p-2 px-2  rounded-lg flex items-center gap-3 hover:bg-neutral-950"><i class="fi fi-rr-sign-out-alt"></i>Sign Out</button>
+                <div class="flex flex-col gap-3">
+                    <button class="bg-neutral-900 text-white text-xl text-roboto font-medium p-2 rounded-lg flex items-center gap-3">
+                        <i class="fi fi-rr-fill"></i>Skin Editor
+                    </button>
+                    <button class="bg-neutral-900 text-white text-xl text-roboto font-medium p-2 px-2 rounded-lg flex items-center gap-3 hover:bg-neutral-950">
+                        <i class="fi fi-rr-sign-out-alt"></i>Sign Out
+                    </button>
                 </div>
             </div>
+        {:else}
+            <p class="text-gray-500 font-roboto">No accounts added yet.</p>
+        {/each} -->
 
-            <div class="p-3 bg-neutral-800 px-5 py-3 rounded-xl">
-                <h1 class="text-xl text-roboto text-gray-300 font-medium">Storage Allocation</h1>
+        <div class="p-3 bg-neutral-800 px-5 py-3 rounded-xl">
+            <h1 class="text-xl text-roboto text-gray-300 font-medium">Storage Allocation</h1>
 
-                <h3 class="text-lg text-green-400 text-roboto font-medium py-2 pt-3">JVM Memory</h3>
-                <Progressbar precision={2} tweenDuration={2000} animate classes={{ label: "bg-green-400" }} progress="67"/>
-                <p class="text-lg text-gray-300 text-roboto font-medium py-2">0 GB / 8 GB</p>
+            <h3 class="text-lg text-green-400 text-roboto font-medium py-2 pt-3">JVM Memory</h3>
+            <Progressbar precision={2} tweenDuration={2000} animate classes={{ label: "bg-green-400" }} progress="67"/>
+            <p class="text-lg text-gray-300 text-roboto font-medium py-2">0 GB / 8 GB</p>
 
-                <h3 class="text-lg text-yellow-400 text-roboto font-medium py-2 pt-5 ">Asset Cache</h3>
-                <Progressbar precision={2} tweenDuration={2000} animate classes={{ label: "bg-yellow-400" }} progress="67"/>
-                <p class="text-lg text-gray-300 text-roboto font-medium py-2">0 GB</p>
-            </div>
-
+            <h3 class="text-lg text-yellow-400 text-roboto font-medium py-2 pt-5">Asset Cache</h3>
+            <Progressbar precision={2} tweenDuration={2000} animate classes={{ label: "bg-yellow-400" }} progress="67"/>
+            <p class="text-lg text-gray-300 text-roboto font-medium py-2">0 GB</p>
         </div>
+
+    </div>
 </main>
