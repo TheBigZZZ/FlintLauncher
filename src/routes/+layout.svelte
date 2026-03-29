@@ -16,10 +16,13 @@
     goto('/library')
   }
 
+  function goToSettings(){
+    goto('/settings')
+  }
 
 </script>
 
-<main class="flex h-screen">
+<main class="flex h-screen w-full">
   <!-- NavBar -->
   <div class="text-center bg-neutral-800 px-5 py-5 flex flex-col w-30 gap-8 shrink-0">
     <div class="font-roboto font-bold text-2xl antialiased text-green-400 text-shadow-lg/30 transition-all hover:animate-ping">F</div>
@@ -44,14 +47,14 @@
       <p class="font-rubik text-shadow-lg/30">Accounts</p>
     </button>
 
-    <button type="button" class="text-gray-500 mt-auto transition-colors ease-in-out hover:text-green-400 hover:drop-shadow-green-300 drop-shadow-2xl">
+    <button onclick={goToSettings} type="button" class="text-gray-500 mt-auto transition-colors ease-in-out hover:text-green-400 hover:drop-shadow-green-300 drop-shadow-2xl">
       <i class="fi fi-rr-settings-sliders text-xl text-shadow-lg/30"></i>
       <p class="font-rubik text-shadow-lg/30">Settings</p>
     </button>
   </div>
 
   <!-- Page content -->
-  <div class="flex-1 overflow-auto">
+  <div class="flex-1 h-full bg-neutral-900 overflow-y-auto [&::-webkit-scrollbar]:hidden">
     {@render children()}
   </div>
 </main>

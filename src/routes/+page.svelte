@@ -11,7 +11,7 @@
             <h2 class="text-white">0 Hours</h2>
         </div>
 
-        <div>
+        <div>g
             <h1 class="text-gray-400">Last Played:</h1>
             <h2 class="text-white">0 Hours ago</h2>
         </div>
