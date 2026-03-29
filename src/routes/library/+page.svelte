@@ -1,5 +1,7 @@
 <script lang="ts">
     import { invoke } from '@tauri-apps/api/core';
+    import { listen } from '@tauri-apps/api/event';
+    import { downloadStore, setInstallingVersion, setInstallProgress, setInstallStatus, setDownloadLogs, addDownloadLog, setError, clearDownloadState } from '$lib/stores/downloadStore';
 
     interface Version {
         id: string;
@@ -15,72 +17,234 @@
     let versions: Version[] = $state([]);
     let selectedVersion: string = $state('');
     let dropdownOpen = $state(false);
-    let installingVersion: string | null = $state(null);
+    let loading = $state(true);
+    let searchQuery: string = $state('');
+
+    // Subscribe to download store
+    let installingVersion = $state<string | null>(null);
     let installProgress = $state(0);
     let installStatus = $state('');
     let error = $state('');
-    let loading = $state(true);
+    let downloadLogs = $state<string[]>([]);
+
+    // Maintain store subscriptions
+    $effect(() => {
+        const unsubscribe = downloadStore.subscribe(state => {
+            installingVersion = state.installingVersion;
+            installProgress = state.installProgress;
+            installStatus = state.installStatus;
+            error = state.error;
+            downloadLogs = state.downloadLogs;
+        });
+        return unsubscribe;
+    });
+
+    // Refresh versions periodically while downloading
+    $effect(() => {
+        if (!installingVersion) return;
+
+        const interval = setInterval(async () => {
+            try {
+                versions = await invoke('fetch_available_versions');
+            } catch (err) {
+                console.error('Failed to refresh versions:', err);
+            }
+        }, 2000); // Refresh every 2 seconds
+
+        return () => clearInterval(interval);
+    });
+
+    // Listen to download progress events
+    $effect(() => {
+        let unsubscribe: (() => void) | undefined;
+        
+        listen('download-progress', (event: any) => {
+            const data = event.payload;
+            if (data.status === 'completed') {
+                addDownloadLog(`  ✓ ${data.filename} (${data.current}/${data.total})`);
+            } else if (data.status === 'failed') {
+                addDownloadLog(`  ✗ ${data.filename} - ${data.error}`);
+            } else if (data.status === 'task-error') {
+                addDownloadLog(`  ✗ Task error: ${data.error}`);
+            }
+        }).then(fn => {
+            unsubscribe = fn;
+        }).catch(err => {
+            console.error('Failed to listen for download events:', err);
+        });
+
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
+    });
+
+    // Reactive computed versions
+    let organizedVersions = $derived.by(() => {
+        return organizeVersions(versions, searchQuery);
+    });
 
     async function onMount() {
+        // Load versions even if download is in progress
+        // This ensures installed versions list is accurate when returning to the page
         await loadVersions();
     }
 
     async function loadVersions() {
         try {
             loading = true;
+            // Don't reset logs if currently downloading
+            if (!installingVersion) {
+                setDownloadLogs(['Loading versions from Mojang manifest...']);
+            } else {
+                addDownloadLog('🔄 Refreshing version list...');
+            }
             versions = await invoke('fetch_available_versions');
-            // Sort by version number descending
-            versions = versions.sort((a, b) => {
-                const aNum = parseFloat(a.id.split('.').slice(0, 2).join('.'));
-                const bNum = parseFloat(b.id.split('.').slice(0, 2).join('.'));
-                return bNum - aNum;
-            });
+            addDownloadLog(`[OK] Loaded ${versions.length} versions`);
+            
+            // Sort versions properly handling all formats
+            versions = versions.sort((a, b) => compareVersions(a.id, b.id));
             loading = false;
         } catch (err) {
-            error = `Failed to load versions: ${err}`;
+            setError(`Failed to load versions: ${err}`);
+            addDownloadLog(`[ERROR] Error: ${err}`);
             loading = false;
         }
     }
 
+    // Compare and sort version strings properly
+    function compareVersions(a: string, b: string): number {
+        // Handle release versions (1.20.1, 1.19.2, etc.)
+        const releasePattern = /^(\d+)\.(\d+)(?:\.(\d+))?/;
+        const aMatch = a.match(releasePattern);
+        const bMatch = b.match(releasePattern);
+        
+        if (aMatch && bMatch) {
+            const aMajor = parseInt(aMatch[1]);
+            const aMinor = parseInt(aMatch[2]);
+            const aPatch = parseInt(aMatch[3] || '0');
+            
+            const bMajor = parseInt(bMatch[1]);
+            const bMinor = parseInt(bMatch[2]);
+            const bPatch = parseInt(bMatch[3] || '0');
+            
+            if (aMajor !== bMajor) return bMajor - aMajor;
+            if (aMinor !== bMinor) return bMinor - aMinor;
+            return bPatch - aPatch;
+        }
+        
+        // Handle snapshots (23w46a, 23w45b, etc.)
+        const snapshotPattern = /^(\d{2})w(\d{2})([a-z])?/;
+        const aSnap = a.match(snapshotPattern);
+        const bSnap = b.match(snapshotPattern);
+        
+        if (aSnap && bSnap) {
+            const aYear = parseInt(aSnap[1]);
+            const aWeek = parseInt(aSnap[2]);
+            const aChar = (aSnap[3] || 'z').charCodeAt(0);
+            
+            const bYear = parseInt(bSnap[1]);
+            const bWeek = parseInt(bSnap[2]);
+            const bChar = (bSnap[3] || 'z').charCodeAt(0);
+            
+            if (aYear !== bYear) return bYear - aYear;
+            if (aWeek !== bWeek) return bWeek - aWeek;
+            return bChar - aChar;
+        }
+        
+        // Handle old versions (b1.7.3, a1.0.3_01, etc.)
+        const oldPattern = /^([ab])(\d+)\.(\d+)(?:\.(\d+))?/;
+        const aOld = a.match(oldPattern);
+        const bOld = b.match(oldPattern);
+        
+        if (aOld && bOld) {
+            const aType = aOld[1].charCodeAt(0);
+            const aMajor = parseInt(aOld[2]);
+            const aMinor = parseInt(aOld[3]);
+            const aPatch = parseInt(aOld[4] || '0');
+            
+            const bType = bOld[1].charCodeAt(0);
+            const bMajor = parseInt(bOld[2]);
+            const bMinor = parseInt(bOld[3]);
+            const bPatch = parseInt(bOld[4] || '0');
+            
+            if (aType !== bType) return bType - aType;
+            if (aMajor !== bMajor) return bMajor - aMajor;
+            if (aMinor !== bMinor) return bMinor - aMinor;
+            return bPatch - aPatch;
+        }
+        
+        // Fallback to reverse string comparison
+        return b.localeCompare(a);
+    }
+
+    // Organize versions by type
+    function organizeVersions(versionsList: Version[], search: string) {
+        const filtered = versionsList.filter(v => 
+            v.id.toLowerCase().includes(search.toLowerCase())
+        );
+
+        const snapshots = filtered.filter(v => v.version_type === 'snapshot').sort((a, b) => compareVersions(a.id, b.id));
+        const releases = filtered.filter(v => v.version_type === 'release').sort((a, b) => compareVersions(a.id, b.id));
+        const old = filtered.filter(v => v.version_type === 'old_beta' || v.version_type === 'old_alpha').sort((a, b) => compareVersions(a.id, b.id));
+
+        return { snapshots, releases, old };
+    }
+
     async function installVersionHandler() {
         if (!selectedVersion) {
-            error = 'Please select a version';
+            setError('Please select a version');
             return;
         }
 
         const version = versions.find(v => v.id === selectedVersion && v.installed);
         if (version) {
-            error = 'Version already installed';
+            setError('Version already installed');
             return;
         }
 
-        installingVersion = selectedVersion;
-        installProgress = 0;
-        installStatus = 'Starting installation...';
-        error = '';
+        setInstallingVersion(selectedVersion);
+        setInstallProgress(0);
+        setInstallStatus('Starting installation...');
+        setError('');
         dropdownOpen = false;
+        setDownloadLogs([`Installing ${selectedVersion}...`, '']);
 
         try {
-            installStatus = 'Downloading version...';
-            installProgress = 25;
+            addDownloadLog('[1/5] Fetching version metadata...');
+            setInstallStatus('Fetching metadata...');
+            setInstallProgress(10);
+
+            addDownloadLog('[2/5] Downloading client JAR...');
+            setInstallStatus('Downloading files...');
+            setInstallProgress(30);
 
             await invoke('install_version', { version: selectedVersion });
 
-            installStatus = 'Installation complete!';
-            installProgress = 100;
+            addDownloadLog('[3/5] Downloaded libraries');
+            addDownloadLog('[4/5] Downloaded assets');
+            addDownloadLog('[5/5] Installing Java runtime...');
+            setInstallProgress(85);
+
+            setInstallStatus('Installation complete!');
+            setInstallProgress(100);
+            addDownloadLog('');
+            addDownloadLog(`[OK] ${selectedVersion} installed successfully!`);
+            
             await loadVersions();
             
             setTimeout(() => {
-                installingVersion = null;
+                setInstallingVersion(null);
                 selectedVersion = '';
-                installProgress = 0;
-                installStatus = '';
+                setInstallProgress(0);
+                setInstallStatus('');
             }, 2000);
         } catch (err) {
-            error = `Installation failed: ${err}`;
-            installingVersion = null;
-            installProgress = 0;
-            installStatus = '';
+            setError(`Installation failed: ${err}`);
+            addDownloadLog('');
+            addDownloadLog(`[ERROR] Installation failed: ${err}`);
+            setInstallingVersion(null);
+            setInstallProgress(0);
+            setInstallStatus('');
         }
     }
 
@@ -88,10 +252,13 @@
         if (!confirm(`Delete version ${version}?`)) return;
 
         try {
+            setDownloadLogs([`Deleting ${version}...`]);
             await invoke('delete_version', { version });
+            addDownloadLog(`[OK] ${version} deleted successfully`);
             await loadVersions();
         } catch (err) {
-            error = `Failed to delete version: ${err}`;
+            addDownloadLog(`[ERROR] Failed to delete: ${err}`);
+            setError(`Failed to delete version: ${err}`);
         }
     }
 
@@ -108,33 +275,54 @@
     onMount();
 </script>
 
-<main class="h-screen w-full flex flex-col items-center justify-center p-4">
-    <div class="flex flex-col gap-6 p-6 font-roboto bg-neutral-800 rounded-xl w-full max-w-2xl">
-        
-        {#if error}
-        <div class="bg-red-900/30 border border-red-500 text-red-300 px-4 py-3 rounded-lg text-sm">
-            {error}
-            <button onclick={() => error = ''} class="ml-2 underline">Dismiss</button>
-        </div>
-        {/if}
-
-        {#if installingVersion}
-        <div class="bg-neutral-700 p-4 rounded-lg">
-            <div class="text-green-400 font-bold mb-2">Installing {installingVersion}...</div>
-            <div class="w-full bg-neutral-600 rounded-full h-2 mb-2">
-                <div class="bg-green-400 h-2 rounded-full transition-all" style="width: {installProgress}%"></div>
+<main class="h-screen w-full flex flex-col gap-4 p-4 font-roboto bg-neutral-900">
+    <div class="flex gap-4 flex-1 min-h-0">
+        <div class="flex-1 flex flex-col gap-6 p-6 bg-neutral-800 rounded-xl overflow-y-auto">
+            
+            {#if error}
+            <div class="bg-red-900/30 border border-red-500 text-red-300 px-4 py-3 rounded-lg text-sm">
+                {error}
+                <button onclick={() => setError('')} class="ml-2 underline">Dismiss</button>
             </div>
-            <div class="text-gray-300 text-sm">{installStatus}</div>
-        </div>
-        {:else if loading}
-        <div class="text-center text-gray-300">
-            <div class="inline-block animate-spin">⟳</div> Loading versions...
-        </div>
-        {:else}
-        <div class="flex flex-col gap-3">
-            <div class="flex flex-col gap-1">
-                <label class="text-green-400 text-xs uppercase tracking-widest font-bold">Select Version</label>
-                <div class="relative">
+            {/if}
+
+            {#if installingVersion}
+            <div class="bg-neutral-700 p-4 rounded-lg">
+                <div class="flex justify-between items-start mb-2">
+                    <div class="text-green-400 font-bold">Installing {installingVersion}...</div>
+                    <button
+                        onclick={async () => {
+                            await invoke('cancel_download');
+                            addDownloadLog('');
+                            addDownloadLog('[INFO] Download cancelled by user');
+                        }}
+                        class="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-1 rounded transition-colors">
+                        Cancel
+                    </button>
+                </div>
+                <div class="w-full bg-neutral-600 rounded-full h-2 mb-2">
+                    <div class="bg-green-400 h-2 rounded-full transition-all" style="width: {installProgress}%"></div>
+                </div>
+                <div class="text-gray-300 text-sm">{installStatus}</div>
+            </div>
+            {:else if loading}
+            <div class="text-center text-gray-300">
+                <div class="inline-block animate-spin">⟳</div> Loading versions...
+            </div>
+            {:else}
+            <div class="flex flex-col gap-3">
+                <div class="flex flex-col gap-1">
+                    <label class="text-green-400 text-xs uppercase tracking-widest font-bold">Search Versions</label>
+                    <input 
+                        type="text"
+                        bind:value={searchQuery}
+                        placeholder="Search by version ID..."
+                        class="bg-neutral-900 text-white text-sm py-2 px-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400" 
+                    />
+                </div>
+
+                <div class="flex flex-col gap-1">
+                    <label class="text-green-400 text-xs uppercase tracking-widest font-bold">Select Version</label>
                     <button
                         onclick={() => dropdownOpen = !dropdownOpen}
                         class="bg-neutral-900 text-white text-sm font-medium py-2 px-3 rounded-lg w-full flex items-center justify-between hover:bg-neutral-700 transition-all focus:ring-0 focus:outline-none">
@@ -143,46 +331,95 @@
                     </button>
 
                     {#if dropdownOpen}
-                    <div class="absolute bottom-full mb-1 w-full bg-neutral-900 rounded-lg shadow-lg z-50" style="max-height: 200px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #4ade80 #171717;">
-                        {#each versions as version}
-                        <button
-                            onmousedown={() => selectVersion(version.id)}
-                            class="w-full text-left px-3 py-2 text-sm text-gray-400 hover:text-green-400 hover:bg-neutral-700 transition-colors {selectedVersion === version.id ? 'text-green-400 bg-neutral-700' : ''} {version.installed ? 'opacity-50' : ''}">
-                            {version.id} ({version.version_type}) {version.installed ? '✓' : ''}
-                        </button>
-                        {/each}
+                    <div class="absolute mt-10 w-80 bg-neutral-900 rounded-lg shadow-lg z-50" style="max-height: 400px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #4ade80 #171717;">
+                        {#if organizedVersions.releases.length > 0}
+                        <div>
+                            <div class="sticky top-0 bg-neutral-800 px-3 py-2 text-green-400 text-xs font-bold uppercase">Releases ({organizedVersions.releases.length})</div>
+                            {#each organizedVersions.releases as version (version.id)}
+                            <button
+                                onmousedown={() => selectVersion(version.id)}
+                                class="w-full text-left px-3 py-2 text-sm text-gray-400 hover:text-green-400 hover:bg-neutral-700 transition-colors {selectedVersion === version.id ? 'text-green-400 bg-neutral-700' : ''} {version.installed ? 'opacity-50' : ''}">
+                                {version.id} {version.installed ? '✓' : ''}
+                            </button>
+                            {/each}
+                        </div>
+                        {/if}
+
+                        {#if organizedVersions.snapshots.length > 0}
+                        <div>
+                            <div class="sticky top-0 bg-neutral-800 px-3 py-2 text-yellow-400 text-xs font-bold uppercase">Snapshots ({organizedVersions.snapshots.length})</div>
+                            {#each organizedVersions.snapshots as version (version.id)}
+                            <button
+                                onmousedown={() => selectVersion(version.id)}
+                                class="w-full text-left px-3 py-2 text-sm text-gray-400 hover:text-yellow-400 hover:bg-neutral-700 transition-colors {selectedVersion === version.id ? 'text-yellow-400 bg-neutral-700' : ''} {version.installed ? 'opacity-50' : ''}">
+                                {version.id} {version.installed ? '✓' : ''}
+                            </button>
+                            {/each}
+                        </div>
+                        {/if}
+
+                        {#if organizedVersions.old.length > 0}
+                        <div>
+                            <div class="sticky top-0 bg-neutral-800 px-3 py-2 text-gray-400 text-xs font-bold uppercase">Old Versions ({organizedVersions.old.length})</div>
+                            {#each organizedVersions.old as version (version.id)}
+                            <button
+                                onmousedown={() => selectVersion(version.id)}
+                                class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:text-gray-300 hover:bg-neutral-700 transition-colors {selectedVersion === version.id ? 'text-gray-300 bg-neutral-700' : ''} {version.installed ? 'opacity-50' : ''}">
+                                {version.id} {version.installed ? '✓' : ''}
+                            </button>
+                            {/each}
+                        </div>
+                        {/if}
+
+                        {#if organizedVersions.releases.length === 0 && organizedVersions.snapshots.length === 0 && organizedVersions.old.length === 0}
+                        <div class="px-3 py-4 text-gray-400 text-sm text-center">
+                            No versions found
+                        </div>
+                        {/if}
                     </div>
                     {/if}
                 </div>
+
+                <button
+                    onclick={installVersionHandler}
+                    disabled={!selectedVersion || !!installingVersion}
+                    class="bg-green-400 text-neutral-900 font-bold text-sm py-2 rounded-lg w-full flex items-center justify-center gap-2 shadow-lg shadow-green-400/30 hover:bg-green-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fi fi-rr-download"></i> Download & Install
+                </button>
             </div>
+            {/if}
 
-            <button
-                onclick={installVersionHandler}
-                disabled={!selectedVersion || !!installingVersion}
-                class="bg-green-400 text-neutral-900 font-bold text-sm py-2 rounded-lg w-full flex items-center justify-center gap-2 shadow-lg shadow-green-400/30 hover:bg-green-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                <i class="fi fi-rr-download"></i> Download & Install
-            </button>
-        </div>
-        {/if}
-
-        <div class="border-t border-neutral-700 pt-4">
-            <div class="text-green-400 text-xs uppercase tracking-widest font-bold mb-3">Installed Versions ({versions.filter(v => v.installed).length})</div>
-            <div class="flex flex-col gap-2 max-h-64 overflow-y-auto">
-                {#each versions.filter(v => v.installed) as version}
-                <div class="bg-neutral-900 rounded-lg p-3 flex justify-between items-center">
-                    <div>
-                        <div class="text-white font-semibold">{version.id}</div>
-                        <div class="text-gray-400 text-xs">{formatDate(version.release_time)}</div>
+            <div class="border-t border-neutral-700 pt-4">
+                <div class="text-green-400 text-xs uppercase tracking-widest font-bold mb-3">Installed Versions ({versions.filter(v => v.installed).length})</div>
+                <div class="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                    {#each versions.filter(v => v.installed) as version}
+                    <div class="bg-neutral-900 rounded-lg p-3 flex justify-between items-center">
+                        <div>
+                            <div class="text-white font-semibold">{version.id}</div>
+                            <div class="text-gray-400 text-xs">{formatDate(version.release_time)}</div>
+                        </div>
+                        <button
+                            onclick={() => deleteInstalledVersion(version.id)}
+                            class="bg-red-900/30 text-red-400 hover:bg-red-900/50 px-3 py-1 rounded text-xs transition-colors">
+                            Delete
+                        </button>
                     </div>
-                    <button
-                        onclick={() => deleteInstalledVersion(version.id)}
-                        class="bg-red-900/30 text-red-400 hover:bg-red-900/50 px-3 py-1 rounded text-xs transition-colors">
-                        Delete
-                    </button>
+                    {/each}
+                    {#if versions.filter(v => v.installed).length === 0}
+                    <div class="text-gray-400 text-sm text-center py-4">No versions installed</div>
+                    {/if}
                 </div>
+            </div>
+        </div>
+
+        <div class="w-80 flex flex-col p-6 bg-neutral-800 rounded-xl h-full">
+            <div class="text-green-400 text-xs uppercase tracking-widest font-bold mb-3 flex-shrink-0">Activity Log</div>
+            <div class="flex-1 bg-neutral-900 rounded-lg p-4 overflow-y-auto text-xs font-mono text-gray-300 space-y-1 min-h-0">
+                {#each downloadLogs as log}
+                <div class="whitespace-pre-wrap break-words">{log}</div>
                 {/each}
-                {#if versions.filter(v => v.installed).length === 0}
-                <div class="text-gray-400 text-sm text-center py-4">No versions installed</div>
+                {#if downloadLogs.length === 0}
+                <div class="text-gray-500">Waiting for activity...</div>
                 {/if}
             </div>
         </div>

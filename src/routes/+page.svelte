@@ -13,6 +13,7 @@
     let currentAccount: string | null = $state(null);
     let installedVersions: Version[] = $state([]);
     let loading: boolean = $state(true);
+    let isLaunching: boolean = $state(false);
 
     onMount(async () => {
         try {
@@ -34,14 +35,20 @@
             return;
         }
         
+        isLaunching = true;
         invoke("launchprocess", { version: selectedVersion })
             .then(() => {
                 console.log("Process launched successfully");
             })
             .catch((error) => {
                 console.error("Error launching process:", error); 
+            })
+            .finally(() => {
+                isLaunching = false;
             });
     }
+
+
 </script>
 
 
@@ -85,13 +92,13 @@
 
     </div>
 
-    <div>
+    <div class="flex flex-row gap-3 p-4">
         <button 
             onclick={launch}
-            disabled={!selectedVersion || loading}
-            class="text-white text-xl font-roboto font-medium py-5 px-15 m-3 bg-green-400 rounded-2xl transition-all ease-in duration-300 hover:bg-green-500 hover:shadow-green-900 shadow-lg active:bg-green-900 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
+            disabled={!selectedVersion || loading || isLaunching}
+            class="text-white text-xl font-roboto font-medium py-5 px-15 bg-green-400 rounded-2xl transition-all ease-in duration-300 hover:bg-green-500 hover:shadow-green-900 shadow-lg active:bg-green-900 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
         >
-            Launch
+            {isLaunching ? 'Launching...' : 'Launch'}
         </button>
     </div>
 </main>

@@ -22,12 +22,47 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JAVA_MANIFEST_URL = 'https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json';
 const RESOURCES_DIR = path.join(__dirname, 'resources', 'java-runtime');
 
-// Java components to bundle (these are used by Minecraft)
 const COMPONENTS_TO_BUNDLE = [
     'jre-legacy',           // For older Minecraft versions
     'java-runtime-alpha',   // For newer versions (Java 16)
     'java-runtime-gamma',   // Alternative Java runtime
 ];
+
+// Parallel download configuration
+const MAX_PARALLEL_DOWNLOADS = 32;
+
+// Queue for managing parallel downloads
+class DownloadQueue {
+    constructor(maxConcurrent) {
+        this.maxConcurrent = maxConcurrent;
+        this.activeDownloads = 0;
+        this.queue = [];
+    }
+
+    async add(downloadFn) {
+        return new Promise((resolve, reject) => {
+            this.queue.push({ downloadFn, resolve, reject });
+            this.processQueue();
+        });
+    }
+
+    async processQueue() {
+        while (this.activeDownloads < this.maxConcurrent && this.queue.length > 0) {
+            this.activeDownloads++;
+            const { downloadFn, resolve, reject } = this.queue.shift();
+            
+            try {
+                const result = await downloadFn();
+                resolve(result);
+            } catch (err) {
+                reject(err);
+            } finally {
+                this.activeDownloads--;
+                this.processQueue();
+            }
+        }
+    }
+}
 
 function ensureDir(dir) {
     if (!fs.existsSync(dir)) {
@@ -124,48 +159,65 @@ async function downloadJavaComponent(component) {
         const fileManifest = await downloadJson(manifestUrl);
         const files = fileManifest.files || {};
         
-        let downloadedCount = 0;
         const fileEntries = Object.entries(files);
         const totalFiles = fileEntries.filter(([_, info]) => info.type === 'file').length;
         
-        console.log(`   Found ${totalFiles} files to download`);
+        console.log(`   Found ${totalFiles} files to download (${MAX_PARALLEL_DOWNLOADS} parallel threads)`);
         
-        // Download files
+        // Create directories first
         for (const [filePath, fileInfo] of fileEntries) {
             if (fileInfo.type === 'directory') {
                 const dirPath = path.join(componentDir, filePath.replace(/\//g, path.sep));
                 ensureDir(dirPath);
-            } else if (fileInfo.type === 'file') {
-                const fileUrl = fileInfo.downloads?.raw?.url;
-                if (!fileUrl) continue;
-
-                const fullPath = path.join(componentDir, filePath.replace(/\//g, path.sep));
-                const dir = path.dirname(fullPath);
-                ensureDir(dir);
-
-                // Skip if already exists
-                if (fs.existsSync(fullPath)) {
-                    downloadedCount++;
-                    if (downloadedCount % 50 === 0) {
-                        process.stdout.write(`\r   ${downloadedCount}/${totalFiles} files`);
-                    }
-                    continue;
-                }
-
-                try {
-                    await downloadFile(fileUrl, fullPath);
-                    downloadedCount++;
-                    if (downloadedCount % 50 === 0) {
-                        process.stdout.write(`\r   ${downloadedCount}/${totalFiles} files`);
-                    }
-                } catch (err) {
-                    console.error(`\n   ❌ Failed to download ${filePath}: ${err.message}`);
-                    // Continue with other files
-                }
             }
         }
+
+        // Prepare file downloads
+        const downloadQueue = new DownloadQueue(MAX_PARALLEL_DOWNLOADS);
+        let downloadedCount = 0;
+        let errorCount = 0;
+        
+        const downloadTasks = fileEntries
+            .filter(([_, info]) => info.type === 'file')
+            .map(([filePath, fileInfo]) => {
+                return async () => {
+                    const fileUrl = fileInfo.downloads?.raw?.url;
+                    if (!fileUrl) return;
+
+                    const fullPath = path.join(componentDir, filePath.replace(/\//g, path.sep));
+
+                    // Skip if already exists
+                    if (fs.existsSync(fullPath)) {
+                        downloadedCount++;
+                        if (downloadedCount % 50 === 0) {
+                            process.stdout.write(`\r   ${downloadedCount}/${totalFiles} files (${MAX_PARALLEL_DOWNLOADS} threads)`);
+                        }
+                        return;
+                    }
+
+                    try {
+                        await downloadFile(fileUrl, fullPath);
+                        downloadedCount++;
+                        if (downloadedCount % 50 === 0) {
+                            process.stdout.write(`\r   ${downloadedCount}/${totalFiles} files (${MAX_PARALLEL_DOWNLOADS} threads)`);
+                        }
+                    } catch (err) {
+                        errorCount++;
+                        // Log but continue - one failed file shouldn't stop everything
+                        if (errorCount <= 5) {  // Limit error output
+                            console.error(`\n   ⚠️  Failed to download ${filePath}: ${err.message}`);
+                        }
+                    }
+                };
+            });
+
+        // Execute all downloads with parallel queue
+        await Promise.all(downloadTasks.map(task => downloadQueue.add(task)));
         
         console.log(`\r   ✅ ${component} downloaded (${downloadedCount}/${totalFiles} files)`);
+        if (errorCount > 0) {
+            console.warn(`   ⚠️  ${errorCount} files failed to download (will retry on next build)`);
+        }
         
     } catch (err) {
         console.error(`❌ Failed to download ${component}: ${err.message}`);
@@ -179,7 +231,8 @@ async function main() {
     console.log(`${'='.repeat(60)}`);
     console.log(`\nBundling location: ${RESOURCES_DIR}`);
     console.log(`Components to bundle: ${COMPONENTS_TO_BUNDLE.join(', ')}`);
-    console.log('\nThis may take 5-15 minutes depending on internet speed...\n');
+    console.log(`Parallel downloads: ${MAX_PARALLEL_DOWNLOADS} threads`);
+    console.log('\nThis may take 2-5 minutes depending on internet speed...\n');
 
     ensureDir(RESOURCES_DIR);
 

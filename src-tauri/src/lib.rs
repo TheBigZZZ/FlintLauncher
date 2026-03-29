@@ -8,7 +8,7 @@ mod library;
 use launchprocess::launchprocess;
 use library::{
     fetch_available_versions, get_installed_versions, get_installed_versions_info, is_version_installed, delete_version,
-    install_version, get_java_path, install_java_component,
+    install_version, get_java_path, install_java_component, cancel_download,
 };
 
 fn accounts_file_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
