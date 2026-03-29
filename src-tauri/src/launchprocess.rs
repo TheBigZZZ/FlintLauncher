@@ -72,7 +72,7 @@ pub fn launchprocess(_app: tauri::AppHandle, version: String) -> Result<(), Stri
     let java_library_path = format!("-Djava.library.path={}", natives_path.display());
     
     // Run Java
-    let output = Command::new("java")
+    Command::new("java")
         .arg("-Xmx2G")
         .arg("-Xms1G")
         .arg(&java_library_path)
@@ -98,14 +98,9 @@ pub fn launchprocess(_app: tauri::AppHandle, version: String) -> Result<(), Stri
         .arg("legacy")
         .arg("--versionType")
         .arg("release")
-        .output()
+        .spawn()
         .map_err(|e| e.to_string())?;
     
-    if output.status.success() {
-        println!("Game launched successfully");
-        Ok(())
-    } else {
-        let stderr = String::from_utf8(output.stderr).unwrap_or_default();
-        Err(format!("Failed to launch game: {}", stderr))
-    }
+    println!("Game launched successfully");
+    Ok(())
 }
