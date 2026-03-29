@@ -12,6 +12,10 @@
     goto('/')
   }
 
+  function goToLibrary(){
+    goto('/library')
+  }
+
 
 </script>
 
@@ -25,25 +29,25 @@
       <p class="font-rubik text-shadow-lg/30">Home</p>
     </button>
 
-    <div class="text-gray-500 transition-colors ease-in-out hover:text-green-400 block hover:drop-shadow-green-300 drop-shadow-2xl">
+    <button type="button" onclick={goToLibrary} class="text-gray-500 transition-colors ease-in-out hover:text-green-400 block hover:drop-shadow-green-300 drop-shadow-2xl">
       <i class="fi fi-rr-books-medical text-xl text-shadow-lg/30"></i>
       <p class="font-rubik text-shadow-lg/30">Library</p>
-    </div>
+    </button>
 
-    <div class="text-gray-500 transition-colors ease-in-out hover:text-green-400 block hover:drop-shadow-green-300 drop-shadow-2xl">
+    <button type="button" class="text-gray-500 transition-colors ease-in-out hover:text-green-400 block hover:drop-shadow-green-300 drop-shadow-2xl">
       <i class="fi fi-rr-document-gavel text-xl text-shadow-lg/30"></i>
       <p class="font-rubik text-shadow-lg/30">Mods</p>
-    </div>
+    </button>
 
     <button type="button" onclick={goToAccount} class="text-gray-500 transition-colors ease-in-out hover:text-green-400 block hover:drop-shadow-green-300 drop-shadow-2xl">
       <i class="fi fi-rr-user-add text-xl text-shadow-lg/30"></i>
       <p class="font-rubik text-shadow-lg/30">Accounts</p>
     </button>
 
-    <div class="text-gray-500 mt-auto transition-colors ease-in-out hover:text-green-400 hover:drop-shadow-green-300 drop-shadow-2xl">
+    <button type="button" class="text-gray-500 mt-auto transition-colors ease-in-out hover:text-green-400 hover:drop-shadow-green-300 drop-shadow-2xl">
       <i class="fi fi-rr-settings-sliders text-xl text-shadow-lg/30"></i>
       <p class="font-rubik text-shadow-lg/30">Settings</p>
-    </div>
+    </button>
   </div>
 
   <!-- Page content -->
