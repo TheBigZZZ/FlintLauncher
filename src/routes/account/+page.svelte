@@ -9,6 +9,10 @@
         goto('/account/addAccount')
       }
 
+      function goToManageProfile(){
+        goto('/account/manageProfile')
+      }
+
 </script>
 
 <main>
@@ -19,7 +23,7 @@
         </div>
 
         <div>
-            <button class="text-white text-xl p-3 font-roboto bg-neutral-800 rounded-xl transition-all hover:bg-neutral-950 active:bg-neutral-900">Manage Profiles</button>
+            <button onclick={goToManageProfile} class="text-white text-xl p-3 font-roboto bg-neutral-800 rounded-xl transition-all hover:bg-neutral-950 active:bg-neutral-900">Manage Profiles</button>
             <button onclick={goToAddAccount} class="text-natural-900 text-xl p-3 mx-10 font-roboto bg-green-400 rounded-xl shadow-green-400/50 shadow-2xl backdrop-blur-2xl transition-all hover:bg-green-200 active:bg-neutral-400">Add Account</button>
         </div>
     </div>

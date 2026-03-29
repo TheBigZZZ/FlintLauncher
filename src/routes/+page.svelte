@@ -24,13 +24,13 @@
         <div>
            <h1 class="text-gray-400">Version Selected:</h1> 
            <select class="w-full bg-neutral-800 text-white font-rubik outline-none ring-0 focus:ring-0 focus:outline-none border-0">
-             <option>Hi</option>
+             <option>TEST_VERSION</option>
            </select>
         </div>
 
     </div>
 
     <div>
-        <button class="text-white text-xl font-roboto font-medium py-5 px-15 m-3 bg-green-400 rounded-2xl transition-all ease-in duration-300 hover:bg-green-500 hover:shadow-green-900 shadow-lg active:bg-green-900">Launch</button>
+        <button class="text-white text-xl font-roboto font-medium py-5 px-15 m-3 bg-green-400 rounded-3xl ease-in-out duration-500 transition-colors transition-transform hover:scale-105 hover:bg-green-500 hover:shadow-green-900 shadow-xl active:bg-green-900">Launch</button>
     </div>
 </main>
