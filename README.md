@@ -1,6 +1,6 @@
 # Flint Launcher
 
-A lightweight, modern Minecraft launcher built with Tauri and Svelte.
+A lightweight, modern and fast Minecraft launcher built with Tauri and Svelte.
 
 ## Features
 
