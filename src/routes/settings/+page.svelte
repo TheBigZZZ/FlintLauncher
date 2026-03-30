@@ -9,10 +9,10 @@
 
 <main class="w-full">
     <div class="grid grid-cols-1 p-5 gap-3 text-xl text-white font-roboto font-medium">--------- Java & Game Settings ---------
-        <div>
+        <!-- <div>
             <Label for="with_helper" class="pb-1 text-green-400 font-bold text-sm">Java Path Picker</Label>
             <Fileupload id="with_helper" class="mb-2 bg-neutral-800 text-white border-none transition-all duration-400 hover:ring-1 ring-green-400 font-bold" />
-        </div>
+        </div> -->
         
         <div>
             <Label class="pb-1 text-green-400 font-bold text-sm">Allocate Memory</Label>

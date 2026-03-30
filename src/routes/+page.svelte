@@ -1,3 +1,101 @@
+<script lang="ts">
+    import { invoke } from "@tauri-apps/api/core";
+    import { onMount } from "svelte";
+
+    interface Version {
+        id: string;
+        version_type: string;
+        release_time: string;
+        installed: boolean;
+    }
+
+    interface GameProfile {
+        name: string;
+        base_version: string;
+        modloader: string;
+        modloader_version: string | null;
+        created_date: string;
+        last_played: string | null;
+        ram_mb: number;
+        enabled_mods: string[];
+    }
+
+    let selectedProfile: string = $state("");
+    let selectedVersion: string = $state("");
+    let currentAccount: string | null = $state(null);
+    let installedVersions: Version[] = $state([]);
+    let gameProfiles: GameProfile[] = $state([]);
+    let lastPlayedProfile: GameProfile | null = $state(null);
+    let loading: boolean = $state(true);
+    let isLaunching: boolean = $state(false);
+    let activeTab: "vanilla" | "profiles" = $state("profiles");
+
+    onMount(async () => {
+        try {
+            currentAccount = await invoke<string | null>('accountgetcurrent');
+            installedVersions = await invoke<Version[]>('get_installed_versions_info');
+            gameProfiles = await invoke<GameProfile[]>('get_all_profiles');
+            
+            // Find the last played profile
+            lastPlayedProfile = gameProfiles.reduce((latest, current) => {
+                if (!latest) return current;
+                if (!current.last_played) return latest;
+                if (!latest.last_played) return current;
+                return new Date(current.last_played) > new Date(latest.last_played) ? current : latest;
+            }, null as GameProfile | null);
+            
+            if (gameProfiles.length > 0) {
+                selectedProfile = gameProfiles[0].name;
+            } else if (installedVersions.length > 0) {
+                selectedVersion = installedVersions[0].id;
+            }
+        } catch (error) {
+            console.error('Failed to load data:', error);
+        } finally {
+            loading = false;
+        }
+    });
+
+    function switchToProfiles() {
+        activeTab = 'profiles';
+    }
+
+    function switchToVanilla() {
+        activeTab = 'vanilla';
+    }
+
+    function launch() {
+        if (activeTab == "profiles" && !selectedProfile) {
+            console.error("No profile selected");
+            return;
+        }
+        if (activeTab == "vanilla" && !selectedVersion) {
+            console.error("No version selected");
+            return;
+        }
+        
+        isLaunching = true;
+        
+        const launchPromise = activeTab == "profiles"
+            ? invoke("launchprocess", { profileName: selectedProfile })
+            : invoke("launchprocess", { version: selectedVersion });
+
+        launchPromise
+            .then(() => {
+                console.log("Process launched successfully");
+            })
+            .catch((error) => {
+                console.error("Error launching process:", error); 
+            })
+            .finally(() => {
+                isLaunching = false;
+            });
+    }
+
+
+</script>
+
+
 
 <main>
     <div class="flex flex-row gap-7 text-xl p-4 font-roboto font-medium border-b border-neutral-700">
@@ -11,7 +109,7 @@
             <h2 class="text-white">0 Hours</h2>
         </div>
 
-        <div>g
+        <div>
             <h1 class="text-gray-400">Last Played:</h1>
             <h2 class="text-white">{lastPlayedProfile ? lastPlayedProfile.name : 'None'}</h2>
         </div>
