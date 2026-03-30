@@ -8,7 +8,7 @@ use libraryManagement::{
     create_profile, delete_profile, delete_version, fetch_available_versions, get_all_profiles,
     get_installed_versions, get_installed_versions_info, get_java_path,
     install_java_component, install_version, is_version_installed, update_profile_last_played,
-    update_profile_ram,
+    update_profile_ram, get_fabric_versions, get_forge_versions, install_fabric_version, install_forge_version, cancel_download,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -35,6 +35,11 @@ pub fn run() {
             delete_profile,
             update_profile_last_played,
             update_profile_ram,
+            get_fabric_versions,
+            get_forge_versions,
+            install_fabric_version,
+            install_forge_version,
+            cancel_download,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -65,7 +65,7 @@ pub async fn spawn_minecraft_process(
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
-    let child = cmd.spawn().map_err(|e| {
+    let mut child = cmd.spawn().map_err(|e| {
         let msg = format!("Failed to launch game: {}", e);
         super::pathManagement::emit_log(app, format!("[ERROR] {}", msg));
         msg
@@ -75,10 +75,28 @@ pub async fn spawn_minecraft_process(
     super::pathManagement::emit_log(
         app,
         format!(
-            "Game launched with PID: {} - Terminal window will stay open",
+            "Game launched with PID: {}",
             pid
         ),
     );
+
+    // Spawn a background task to wait for the game process and report completion
+    let app_clone = app.clone();
+    tokio::spawn(async move {
+        match child.wait() {
+            Ok(status) => {
+                if status.success() {
+                    super::pathManagement::emit_log(&app_clone, format!("[OK] Game exited successfully (PID: {})", pid));
+                } else {
+                    let exit_code = status.code().map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string());
+                    super::pathManagement::emit_log(&app_clone, format!("[ERROR] Game crashed with exit code: {} (PID: {})", exit_code, pid));
+                }
+            },
+            Err(e) => {
+                super::pathManagement::emit_log(&app_clone, format!("[ERROR] Failed to wait for game process: {} (PID: {})", e, pid));
+            }
+        }
+    });
 
     Ok(())
 }

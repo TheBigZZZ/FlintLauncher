@@ -38,6 +38,14 @@
     let showProfileSettings = $state(false);
     let settingsProfileName = $state('');
     let settingsRamMb = $state(2048);
+    
+    // Modloader state
+    let selectedModloader: 'none' | 'fabric' | 'forge' = $state('none');
+    let fabricVersions: any[] = $state([]);
+    let forgeVersions: any[] = $state([]);
+    let selectedModloaderVersion = $state('');
+    let loadingModLoaders = $state(false);
+    let modloaderDropdownOpen = $state(false);
 
     // Subscribe to download store
     let installingVersion = $state<string | null>(null);
@@ -139,6 +147,55 @@
         }
     }
 
+    // Load modloader versions when a version is selected
+    async function loadModLoaderVersions(minecraftVersion: string) {
+        if (!minecraftVersion) return;
+        
+        loadingModLoaders = true;
+        selectedModloader = 'none';
+        selectedModloaderVersion = '';
+        addDownloadLog(`[INFO] Loading modloaders for ${minecraftVersion}...`);
+        
+        try {
+            // Fetch Fabric versions
+            console.log(`[DEBUG] Fetching Fabric versions for ${minecraftVersion}`);
+            fabricVersions = await invoke('get_fabric_versions', { minecraftVersion: minecraftVersion });
+            if (Array.isArray(fabricVersions)) {
+                console.log(`[DEBUG] Got ${fabricVersions.length} Fabric versions:`, fabricVersions);
+                addDownloadLog(`[OK] Loaded ${fabricVersions.length} Fabric versions for ${minecraftVersion}`);
+            } else {
+                console.error('[DEBUG] fabricVersions is not an array:', typeof fabricVersions, fabricVersions);
+                fabricVersions = [];
+                addDownloadLog(`[ERROR] Unexpected Fabric response type`);
+            }
+        } catch (err) {
+            console.error('Failed to load Fabric versions:', err);
+            addDownloadLog(`[ERROR] Could not load Fabric versions: ${err}`);
+            fabricVersions = [];
+        }
+        
+        try {
+            // Fetch Forge versions
+            console.log(`[DEBUG] Fetching Forge versions for ${minecraftVersion}`);
+            forgeVersions = await invoke('get_forge_versions', { minecraftVersion: minecraftVersion });
+            if (Array.isArray(forgeVersions)) {
+                console.log(`[DEBUG] Got ${forgeVersions.length} Forge versions:`, forgeVersions);
+                addDownloadLog(`[OK] Loaded ${forgeVersions.length} Forge versions for ${minecraftVersion}`);
+            } else {
+                console.error('[DEBUG] forgeVersions is not an array:', typeof forgeVersions, forgeVersions);
+                forgeVersions = [];
+                addDownloadLog(`[ERROR] Unexpected Forge response type`);
+            }
+        } catch (err) {
+            console.error('Failed to load Forge versions:', err);
+            addDownloadLog(`[ERROR] Could not load Forge versions: ${err}`);
+            forgeVersions = [];
+        }
+        
+        loadingModLoaders = false;
+        addDownloadLog(`[INFO] Modloader loading complete - Fabric: ${fabricVersions.length}, Forge: ${forgeVersions.length}`);
+    }
+
     async function createProfileHandler() {
         if (!profileName.trim()) {
             setError('Profile name is required');
@@ -148,6 +205,12 @@
             setError('Minecraft version is required');
             return;
         }
+
+        let effectiveVersion = profileSelectedVersion;
+
+        if (selectedModloader === 'fabric' && selectedModloaderVersion) {
+            effectiveVersion = `fabric-loader-${selectedModloaderVersion}-${profileSelectedVersion}`;
+        } 
 
         creatingProfile = true;
         try {
@@ -160,10 +223,34 @@
                 addDownloadLog(`[OK] Minecraft ${profileSelectedVersion} downloaded`);
             }
             
+            // Install modloader if selected
+            if (selectedModloader !== 'none' && selectedModloaderVersion) {
+                addDownloadLog(`[INFO] Installing ${selectedModloader} ${selectedModloaderVersion}...`);
+                
+                try {
+                    if (selectedModloader === 'fabric') {
+                        await invoke('install_fabric_version', {
+                            minecraftVersion: profileSelectedVersion,
+                            fabricVersion: selectedModloaderVersion
+                        });
+                    } else if (selectedModloader === 'forge') {
+                        await invoke('install_forge_version', {
+                            minecraftVersion: profileSelectedVersion,
+                            forgeVersion: selectedModloaderVersion
+                        });
+                    }
+                    
+                    addDownloadLog(`[OK] ${selectedModloader} ${selectedModloaderVersion} installed`);
+                } catch (err) {
+                    addDownloadLog(`[WARN] Modloader installation failed, continuing anyway: ${err}`);
+                    console.warn('Modloader installation error:', err);
+                }
+            }
+            
             addDownloadLog(`[INFO] Creating profile '${profileName}'...`);
             await invoke('create_profile', {
                 name: profileName,
-                baseVersion: profileSelectedVersion
+                baseVersion: effectiveVersion
             });
             
             addDownloadLog(`[OK] Profile '${profileName}' created successfully`);
@@ -173,8 +260,11 @@
             showProfileModal = false;
             profileName = '';
             profileSelectedVersion = '';
+            selectedModloader = 'none';``
+            selectedModloaderVersion = '';
             profileSearchQuery = '';
             profileDropdownOpen = false;
+            modloaderDropdownOpen = false;
         } catch (err) {
             setError(`Failed to create profile: ${err}`);
             addDownloadLog(`[ERROR] Failed to create profile: ${err}`);
@@ -399,7 +489,9 @@
         try {
             addDownloadLog(`[INFO] Launching profile '${profileName}'...`);
             await invoke('launchprocess', { profileName });
-            addDownloadLog(`[OK] Game launched!`);
+            
+            // Don't show success yet - wait for backend to report actual game exit status
+            addDownloadLog(`[INFO] Game process spawned, waiting for exit status...`);
         } catch (err) {
             setError(`Failed to launch profile: ${err}`);
             addDownloadLog(`[ERROR] Failed to launch: ${err}`);
@@ -462,8 +554,9 @@
             {:else}
             <div class="flex flex-col gap-3">
                 <div class="flex flex-col gap-1">
-                    <label class="text-green-400 text-xs uppercase tracking-widest font-bold">Search Versions</label>
+                    <label for="search-versions" class="text-green-400 text-xs uppercase tracking-widest font-bold">Search Versions</label>
                     <input 
+                        id="search-versions"
                         type="text"
                         bind:value={searchQuery}
                         placeholder="Search by version ID..."
@@ -472,8 +565,10 @@
                 </div>
 
                 <div class="flex flex-col gap-1">
-                    <label class="text-green-400 text-xs uppercase tracking-widest font-bold">Select Version</label>
+                    <div class="text-green-400 text-xs uppercase tracking-widest font-bold">Select Version</div>
                     <button
+                        id="select-version"
+                        aria-label="Select Version"
                         onclick={() => dropdownOpen = !dropdownOpen}
                         class="bg-neutral-900 text-white text-sm font-medium py-2 px-3 rounded-lg w-full flex items-center justify-between hover:bg-neutral-700 transition-all focus:ring-0 focus:outline-none">
                         {selectedVersion || 'Select Version'}
@@ -575,8 +670,9 @@
                     <div class="flex flex-col gap-6">
                         <!-- Profile Name -->
                         <div>
-                            <label class="text-white text-sm font-semibold mb-3 block">Profile Name</label>
+                            <label for="profile-name" class="text-white text-sm font-semibold mb-3 block">Profile Name</label>
                             <input
+                                id="profile-name"
                                 type="text"
                                 bind:value={profileName}
                                 placeholder="e.g., My Experiment"
@@ -585,7 +681,7 @@
 
                         <!-- Version Selection (same as Versions tab) -->
                         <div>
-                            <label class="text-white text-sm font-semibold mb-3 block">Select Minecraft Version</label>
+                            <div class="text-white text-sm font-semibold mb-3 block">Select Minecraft Version</div>
                             
                             <!-- Search Box -->
                             <input 
@@ -597,6 +693,7 @@
 
                             <!-- Version Dropdown Button -->
                             <button
+                                aria-label="Select Minecraft Version"
                                 onclick={() => profileDropdownOpen = !profileDropdownOpen}
                                 class="bg-neutral-900 text-white text-sm font-medium py-3 px-4 rounded-lg w-full flex items-center justify-between hover:bg-neutral-700 transition-all focus:ring-0 focus:outline-none">
                                 {profileSelectedVersion || 'Select Version'}
@@ -614,6 +711,7 @@
                                         onmousedown={() => {
                                             profileSelectedVersion = version.id;
                                             profileDropdownOpen = false;
+                                            loadModLoaderVersions(version.id);
                                         }}
                                         class="w-full text-left px-4 py-2 text-sm text-gray-400 hover:text-green-400 hover:bg-neutral-700 transition-colors {profileSelectedVersion === version.id ? 'text-green-400 bg-neutral-700' : ''}">
                                         {version.id} {version.installed ? '[Downloaded]' : ''}
@@ -630,6 +728,7 @@
                                         onmousedown={() => {
                                             profileSelectedVersion = version.id;
                                             profileDropdownOpen = false;
+                                            loadModLoaderVersions(version.id);
                                         }}
                                         class="w-full text-left px-4 py-2 text-sm text-gray-400 hover:text-yellow-400 hover:bg-neutral-700 transition-colors {profileSelectedVersion === version.id ? 'text-yellow-400 bg-neutral-700' : ''}">
                                         {version.id} {version.installed ? '[Downloaded]' : ''}
@@ -646,6 +745,7 @@
                                         onmousedown={() => {
                                             profileSelectedVersion = version.id;
                                             profileDropdownOpen = false;
+                                            loadModLoaderVersions(version.id);
                                         }}
                                         class="w-full text-left px-4 py-2 text-sm text-gray-500 hover:text-gray-300 hover:bg-neutral-700 transition-colors {profileSelectedVersion === version.id ? 'text-gray-300 bg-neutral-700' : ''}">
                                         {version.id} {version.installed ? '[Downloaded]' : ''}
@@ -671,6 +771,80 @@
                             {/if}
                             {/if}
                         </div>
+
+                        <!-- Modloader Selection -->
+                        <div>
+                            <div class="text-white text-sm font-semibold mb-3 block">Modloader (Optional)</div>
+                            {#if loadingModLoaders}
+                            <div class="text-gray-400 text-sm py-3 px-4 bg-neutral-900 rounded-lg">
+                                <div class="inline-block animate-spin">⟳</div> Loading modloaders...
+                            </div>
+                            {:else if profileSelectedVersion}
+                            <div class="flex gap-2 mb-3">
+                                <button
+                                    onclick={() => { selectedModloader = 'none'; modloaderDropdownOpen = false; }}
+                                    class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all {selectedModloader === 'none' ? 'bg-green-400 text-neutral-900' : 'bg-neutral-700 text-gray-300 hover:bg-neutral-600'}">
+                                    None
+                                </button>
+                                <button
+                                    onclick={() => { selectedModloader = 'fabric'; selectedModloaderVersion = fabricVersions[0]?.version || ''; }}
+                                    disabled={fabricVersions.length === 0}
+                                    class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed {selectedModloader === 'fabric' ? 'bg-blue-500 text-white' : 'bg-neutral-700 text-gray-300 hover:bg-neutral-600'}">
+                                    Fabric {fabricVersions.length > 0 ? `(${fabricVersions.length})` : ''}
+                                </button>
+                                <button
+                                    onclick={() => { selectedModloader = 'forge'; selectedModloaderVersion = forgeVersions[0]?.version || ''; }}
+                                    disabled={forgeVersions.length === 0}
+                                    class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed {selectedModloader === 'forge' ? 'bg-orange-500 text-white' : 'bg-neutral-700 text-gray-300 hover:bg-neutral-600'}">
+                                    Forge {forgeVersions.length > 0 ? `(${forgeVersions.length})` : ''}
+                                </button>
+                            </div>
+
+                            {#if selectedModloader !== 'none'}
+                            <div>
+                                <div class="text-gray-300 text-xs mb-2">Select {selectedModloader} version:</div>
+                                <div class="relative">
+                                    <button
+                                        onclick={() => modloaderDropdownOpen = !modloaderDropdownOpen}
+                                        class="w-full bg-neutral-900 text-white text-sm py-2 px-3 rounded-lg flex items-center justify-between hover:bg-neutral-700 transition-all">
+                                        {selectedModloaderVersion || `Select ${selectedModloader} version`}
+                                        <i class="fi fi-rr-angle-down text-xs transition-transform {modloaderDropdownOpen ? 'rotate-180' : ''}"></i>
+                                    </button>
+
+                                    {#if modloaderDropdownOpen}
+                                    <div class="absolute top-full left-0 right-0 mt-1 bg-neutral-900 rounded-lg shadow-lg z-50" style="max-height: 200px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #4ade80 #171717;">
+                                        {#if selectedModloader === 'fabric'}
+                                            {#each fabricVersions as version (version.version)}
+                                            <button
+                                                onmousedown={() => {
+                                                    selectedModloaderVersion = version.version;
+                                                    modloaderDropdownOpen = false;
+                                                }}
+                                                class="w-full text-left px-3 py-2 text-sm text-gray-400 hover:text-blue-400 hover:bg-neutral-700 transition-colors {selectedModloaderVersion === version.version ? 'text-blue-400 bg-neutral-700' : ''}">
+                                                {version.version} {version.stable ? '(stable)' : '(beta)'}
+                                            </button>
+                                            {/each}
+                                        {:else if selectedModloader === 'forge'}
+                                            {#each forgeVersions as version (version.version)}
+                                            <button
+                                                onmousedown={() => {
+                                                    selectedModloaderVersion = version.version;
+                                                    modloaderDropdownOpen = false;
+                                                }}
+                                                class="w-full text-left px-3 py-2 text-sm text-gray-400 hover:text-orange-400 hover:bg-neutral-700 transition-colors {selectedModloaderVersion === version.version ? 'text-orange-400 bg-neutral-700' : ''}">
+                                                {version.version} {version.latest ? '(latest)' : ''}
+                                            </button>
+                                            {/each}
+                                        {/if}
+                                    </div>
+                                    {/if}
+                                </div>
+                            </div>
+                            {/if}
+                            {:else}
+                            <p class="text-gray-400 text-xs py-3">Select a Minecraft version first to see available modloaders</p>
+                            {/if}
+                        </div>
                     </div>
 
                     <!-- Action Buttons -->
@@ -680,8 +854,11 @@
                                 showProfileModal = false;
                                 profileName = '';
                                 profileSelectedVersion = '';
+                                selectedModloader = 'none';
+                                selectedModloaderVersion = '';
                                 profileSearchQuery = '';
                                 profileDropdownOpen = false;
+                                modloaderDropdownOpen = false;
                             }}
                             class="flex-1 bg-neutral-700 hover:bg-neutral-600 text-white font-semibold py-3 rounded-lg transition-colors">
                             Cancel
@@ -715,18 +892,19 @@
                     <div class="flex flex-col gap-6">
                         <!-- Profile Name Display -->
                         <div>
-                            <label class="text-white text-sm font-semibold mb-3 block">Profile: {settingsProfileName}</label>
+                            <div class="text-white text-sm font-semibold mb-3 block">Profile: {settingsProfileName}</div>
                         </div>
 
                         <!-- RAM Setting -->
                         <div>
                             <div class="flex justify-between items-center mb-3">
-                                <label class="text-white text-sm font-semibold">Memory (RAM)</label>
+                                <label for="ram-slider" class="text-white text-sm font-semibold">Memory (RAM)</label>
                                 <span class="text-green-400 font-bold text-lg">{settingsRamMb}MB</span>
                             </div>
                             <div class="flex items-center gap-4">
                                 <span class="text-gray-400 text-xs">512MB</span>
                                 <input 
+                                    id="ram-slider"
                                     type="range" 
                                     bind:value={settingsRamMb}
                                     min={512}

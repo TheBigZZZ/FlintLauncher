@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 use accountRetrieval::get_current_account_with_log;
-use classpathBuilder::{build_classpath, get_asset_index, get_main_class};
+use classpathBuilder::{build_classpath, get_asset_index, get_main_class, merge_version_json};
 use javaDiscovery::find_java_executable;
 use gameSpawning::{spawn_minecraft_process, LaunchConfig};
 use pathManagement::{emit_log, setup_directories};
@@ -103,13 +103,37 @@ pub async fn launchprocess(
     // Read version JSON
     emit_log(&app, "Building classpath...");
 
-    let version_json_path = base_dir
-        .join("versions")
+    // Try to find the actual version directory (including Fabric/Forge variants)
+    let versions_dir = base_dir.join("versions");
+    let mut version_json_path = versions_dir
         .join(&actual_version)
         .join(format!("{}.json", &actual_version));
+    
+    let mut actual_version_id = actual_version.clone();
+    
+    // If vanilla version doesn't exist, check for Fabric/Forge versions
+    if !version_json_path.exists() {
+        emit_log(&app, format!("Vanilla version {} not found, looking for modloader variants...", actual_version));
+        
+        // Check for Fabric versions (they have names like fabric-loader-X.X.X-1.20.1)
+        if let Ok(entries) = fs::read_dir(&versions_dir) {
+            for entry in entries.flatten() {
+                if let Ok(filename) = entry.file_name().into_string() {
+                    if filename.contains("fabric-loader") && filename.contains(&actual_version) {
+                        version_json_path = versions_dir
+                            .join(&filename)
+                            .join(format!("{}.json", &filename));
+                        actual_version_id = filename;
+                        emit_log(&app, format!("Found Fabric variant: {}", actual_version_id));
+                        break;
+                    }
+                }
+            }
+        }
+    }
 
     let json_content = fs::read_to_string(&version_json_path).map_err(|e| {
-        emit_log(&app, format!("[ERROR] Failed to read version JSON: {}", e));
+        emit_log(&app, format!("[ERROR] Failed to read version JSON at {}: {}", version_json_path.display(), e));
         e.to_string()
     })?;
 
@@ -117,6 +141,71 @@ pub async fn launchprocess(
         emit_log(&app, format!("[ERROR] Failed to parse version JSON: {}", e));
         e.to_string()
     })?;
+
+    // Log the actual structure for debugging
+    if let Some(obj) = version_json.as_object() {
+        let keys: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+        emit_log(&app, format!("[DEBUG] Version JSON keys: {:?}", keys));
+        
+        // Check for specific expected fields
+        if version_json.get("assetIndex").is_some() {
+            emit_log(&app, "[DEBUG] ✓ assetIndex found");
+        } else {
+            emit_log(&app, "[DEBUG] ✗ MISSING: assetIndex");
+        }
+        
+        if version_json.get("mainClass").is_some() {
+            emit_log(&app, "[DEBUG] ✓ mainClass found");
+        } else {
+            emit_log(&app, "[DEBUG] ✗ MISSING: mainClass");
+        }
+        
+        if version_json.get("libraries").is_some() {
+            emit_log(&app, "[DEBUG] ✓ libraries found");
+        } else {
+            emit_log(&app, "[DEBUG] ✗ MISSING: libraries");
+        }
+        
+        if version_json.get("downloads").is_some() {
+            emit_log(&app, "[DEBUG] ✓ downloads found");
+        } else {
+            emit_log(&app, "[DEBUG] ✗ MISSING: downloads");
+        }
+    }
+
+    // Merge inherited versions (for Fabric/Forge which inherit from vanilla)
+    let original_version = version_json.clone();
+    let version_json = match merge_version_json(&version_json, &base_dir) {
+        Ok(merged) => {
+            emit_log(&app, "[DEBUG] Successfully merged inherited version");
+            merged
+        },
+        Err(e) => {
+            emit_log(&app, format!("[WARN] Failed to merge parent version, using current version: {}", e));
+            original_version
+        }
+    };
+
+    // Log merged version structure
+    if version_json.get("assetIndex").is_some() {
+        emit_log(&app, "[DEBUG] ✓ assetIndex found (after merge if applicable)");
+    } else {
+        emit_log(&app, "[DEBUG] ✗ assetIndex missing even after merge attempt");
+    }
+    
+    // Debug: log what libraries are in the merged version
+    if let Some(libs) = version_json["libraries"].as_array() {
+        emit_log(&app, format!("[DEBUG] Merged version has {} libraries", libs.len()));
+        // Log first few library names for debugging
+        for (idx, lib) in libs.iter().take(5).enumerate() {
+            if let Some(name) = lib.get("name").and_then(|n| n.as_str()) {
+                emit_log(&app, format!("[DEBUG]   Lib {}: {}", idx, name));
+            }
+        }
+        if libs.len() > 5 {
+            emit_log(&app, format!("[DEBUG]   ... and {} more", libs.len() - 5));
+        }
+    }
 
     // Extract metadata from version JSON
     let asset_index = get_asset_index(&version_json).map_err(|e| {
@@ -132,8 +221,8 @@ pub async fn launchprocess(
     // Build classpath
     let main_jar = base_dir
         .join("versions")
-        .join(&actual_version)
-        .join(format!("{}.jar", &actual_version));
+        .join(&actual_version_id)
+        .join(format!("{}.jar", &actual_version_id));
 
     let classpath = build_classpath(&version_json, &dirs.libraries_dir, &main_jar).map_err(|e| {
         emit_log(&app, format!("[ERROR] {}", e));

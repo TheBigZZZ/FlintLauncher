@@ -135,13 +135,13 @@
         {#if activeTab == 'profiles'}
         <div class="flex flex-col gap-3">
             <div class="flex flex-col gap-1">
-                <label class="text-green-400 text-sm font-bold">Select Profile</label>
+                <label for="select-profile" class="text-green-400 text-sm font-bold">Select Profile</label>
                 {#if loading}
                 <div class="text-gray-500">Loading profiles...</div>
                 {:else if gameProfiles.length === 0}
                 <div class="text-gray-500 py-4 text-center">No profiles created yet</div>
                 {:else}
-                <select bind:value={selectedProfile} class="bg-neutral-800 text-white py-2 px-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400">
+                <select id="select-profile" bind:value={selectedProfile} class="bg-neutral-800 text-white py-2 px-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400">
                     {#each gameProfiles as profile}
                     <option value={profile.name}>
                         {profile.name} ({profile.base_version} - {profile.modloader})
@@ -171,13 +171,13 @@
         {#if activeTab == 'vanilla'}
         <div class="flex flex-col gap-3">
             <div class="flex flex-col gap-1">
-                <label class="text-green-400 text-sm font-bold">Select Version</label>
+                <label for="select-version" class="text-green-400 text-sm font-bold">Select Version</label>
                 {#if loading}
                 <div class="text-gray-500">Loading versions...</div>
                 {:else if installedVersions.length === 0}
                 <div class="text-gray-500 py-4 text-center">No versions installed</div>
                 {:else}
-                <select bind:value={selectedVersion} class="bg-neutral-800 text-white py-2 px-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400">
+                <select id="select-version" bind:value={selectedVersion} class="bg-neutral-800 text-white py-2 px-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400">
                     {#each installedVersions as version}
                     <option value={version.id}>{version.id}</option>
                     {/each}
