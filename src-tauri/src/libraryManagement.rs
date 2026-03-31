@@ -97,17 +97,45 @@ fn get_bundled_java_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
 }
 
 fn copy_bundled_java(component: &str, app: &tauri::AppHandle) -> Result<(), String> {
+    // Try to get bundled Java from app resources first
     if let Some(bundled_dir) = get_bundled_java_dir(app) {
         let src = bundled_dir.join(component);
+        eprintln!("[JAVA] Checking bundled Java at: {}", src.display());
         if src.exists() {
             let flint_dir = get_flint_dir()?;
             let dest = flint_dir.join("runtime").join(component);
             if !dest.exists() {
+                eprintln!("[JAVA] Copying bundled {} from {} to {}", component, src.display(), dest.display());
                 copy_dir_all(&src, &dest)
                     .map_err(|e| format!("Failed to copy bundled Java: {}", e))?;
+                eprintln!("[JAVA] ✓ Successfully copied {} to .flint/runtime", component);
+            } else {
+                eprintln!("[JAVA] Destination already exists: {}", dest.display());
             }
+            return Ok(());
+        } else {
+            eprintln!("[JAVA] ✗ Bundled Java not found at app resources: {}", src.display());
         }
+    } else {
+        eprintln!("[JAVA] ✗ Could not determine bundled Java directory from app");
     }
+
+    // Fallback: try source resources (for development)
+    let source_dir = PathBuf::from("src-tauri/resources/java-runtime").join(component);
+    if source_dir.exists() {
+        eprintln!("[JAVA] Found Java in source resources: {}", source_dir.display());
+        let flint_dir = get_flint_dir()?;
+        let dest = flint_dir.join("runtime").join(component);
+        if !dest.exists() {
+            eprintln!("[JAVA] Copying source {} from {} to {}", component, source_dir.display(), dest.display());
+            copy_dir_all(&source_dir, &dest)
+                .map_err(|e| format!("Failed to copy Java from source: {}", e))?;
+            eprintln!("[JAVA] ✓ Successfully copied {} from source to .flint/runtime", component);
+        }
+        return Ok(());
+    }
+
+    eprintln!("[JAVA] ⚠ Could not find bundled Java {} anywhere, will attempt download", component);
     Ok(())
 }
 
@@ -292,6 +320,14 @@ async fn download_files_parallel(tasks: Vec<DownloadTask>, app: tauri::AppHandle
 
     let mut errors: Vec<String> = Vec::new();
     while let Some(result) = join_set.join_next().await {
+        if should_cancel_download() {
+            let _ = app.emit("download-progress", serde_json::json!({
+                "status": "cancelled",
+                "message": "Download cancelled by user"
+            }));
+            return Err("Download cancelled".to_string());
+        }
+
         match result {
             Ok(Ok(())) => {}
             Ok(Err(e)) => errors.push(e),
@@ -675,28 +711,29 @@ pub async fn install_version(
 }
 
 #[tauri::command]
-pub async fn install_java_component(app: tauri::AppHandle, component: String, _major_version: u32) -> Result<String, String> {
+pub async fn install_java_component(app: tauri::AppHandle, component: String, major_version: u32) -> Result<String, String> {
     let flint_dir = get_flint_dir()?;
     let java_dir = flint_dir.join("runtime").join(&component);
     let java_exe = java_dir.join("bin").join("java.exe");
 
+    eprintln!("[JAVA] install_java_component called for {} (Java {})", component, major_version);
+
     if java_exe.exists() {
+        eprintln!("[JAVA] ✓ Java {} already cached at {}", component, java_exe.display());
         return Ok(java_exe.to_string_lossy().to_string());
     }
 
-    if let Ok(output) = std::process::Command::new("where").arg("java.exe").output() {
-        if output.status.success() {
-            if let Ok(stdout) = String::from_utf8(output.stdout) {
-                if let Some(java_path) = stdout.lines().next() {
-                    return Ok(java_path.trim().to_string());
-                }
-            }
-        }
-    }
-
+    // Try to copy bundled Java FIRST - this is our preference
+    eprintln!("[JAVA] Attempting to copy bundled Java {}...", component);
     if copy_bundled_java(&component, &app).is_ok() && java_exe.exists() {
+        eprintln!("[JAVA] ✓ Bundled Java {} installed to .flint/runtime", component);
         return Ok(java_exe.to_string_lossy().to_string());
+    } else {
+        eprintln!("[JAVA] ✗ Bundled Java {} not available from resources", component);
     }
+
+    // Download from Mojang if bundled isn't available
+    eprintln!("[JAVA] Downloading {} from Mojang for Java {}...", component, major_version);
 
     let client = get_client();
     let manifest_response = client
@@ -720,6 +757,7 @@ pub async fn install_java_component(app: tauri::AppHandle, component: String, _m
         .as_str()
         .ok_or("No manifest URL")?;
 
+    eprintln!("[JAVA] Downloading Java manifest from Mojang...");
     let files_response = get_client()
         .get(java_manifest_url)
         .send()
@@ -737,6 +775,7 @@ pub async fn install_java_component(app: tauri::AppHandle, component: String, _m
 
     fs::create_dir_all(&java_dir).map_err(|e| e.to_string())?;
 
+    eprintln!("[JAVA] Downloading {} Java files...", files.len());
     for (path, info) in files.iter() {
         let path_str: &str = path;
         if let Some(file_type) = info["type"].as_str() {
@@ -756,6 +795,7 @@ pub async fn install_java_component(app: tauri::AppHandle, component: String, _m
         }
     }
 
+    eprintln!("[JAVA] ✓ Java {} downloaded and installed to .flint/runtime", component);
     Ok(java_exe.to_string_lossy().to_string())
 }
 

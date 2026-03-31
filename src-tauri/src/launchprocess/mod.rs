@@ -173,6 +173,13 @@ pub async fn launchprocess(
         }
     }
 
+    // Check Java version requirement
+    if let Some(java_info) = version_json.get("javaVersion") {
+        if let Some(major) = java_info.get("majorVersion").and_then(|m| m.as_u64()) {
+            emit_log(&app, format!("[INFO] This version requires Java {}", major));
+        }
+    }
+
     // Merge inherited versions (for Fabric/Forge which inherit from vanilla)
     let original_version = version_json.clone();
     let version_json = match merge_version_json(&version_json, &base_dir) {

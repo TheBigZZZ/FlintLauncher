@@ -57,6 +57,9 @@
     let error = $state('');
     let downloadLogs = $state<string[]>([]);
 
+    // Flag to track if download-progress listener has been set up
+    let downloadProgressListenerSetUp = false;
+
     // Maintain store subscriptions
     $effect(() => {
         const unsubscribe = downloadStore.subscribe(state => {
@@ -93,29 +96,26 @@
         }
     });
 
-    // Listen to download progress events
-    $effect(() => {
-        let unsubscribe: (() => void) | undefined;
-        
-        listen('download-progress', (event: any) => {
-            const data = event.payload;
-            if (data.status === 'completed') {
-                addDownloadLog(`  ✓ ${data.filename} (${data.current}/${data.total})`);
-            } else if (data.status === 'failed') {
-                addDownloadLog(`  ✗ ${data.filename} - ${data.error}`);
-            } else if (data.status === 'task-error') {
-                addDownloadLog(`  ✗ Task error: ${data.error}`);
-            }
-        }).then(fn => {
-            unsubscribe = fn;
-        }).catch(err => {
-            console.error('Failed to listen for download events:', err);
-        });
+    // Listen to download progress events - set up once to avoid disconnecting during state updates
+    async function setupDownloadProgressListener() {
+        if (downloadProgressListenerSetUp) return;
+        downloadProgressListenerSetUp = true;
 
-        return () => {
-            if (unsubscribe) unsubscribe();
-        };
-    });
+        try {
+            await listen('download-progress', (event: any) => {
+                const data = event.payload;
+                if (data.status === 'completed') {
+                    addDownloadLog(`  ✓ ${data.filename} (${data.current}/${data.total})`);
+                } else if (data.status === 'failed') {
+                    addDownloadLog(`  ✗ ${data.filename} - ${data.error}`);
+                } else if (data.status === 'task-error') {
+                    addDownloadLog(`  ✗ Task error: ${data.error}`);
+                }
+            });
+        } catch (err) {
+            console.error('Failed to listen for download events:', err);
+        }
+    }
 
     // Reactive computed versions
     let organizedVersions = $derived.by(() => {
@@ -127,6 +127,8 @@
         // This ensures installed versions list is accurate when returning to the page
         await loadVersions();
         await loadProfiles();
+        // Set up the download progress listener once
+        await setupDownloadProgressListener();
     }
 
     async function loadVersions() {
@@ -420,8 +422,22 @@
 
         const version = versions.find(v => v.id === selectedVersion && v.installed);
         if (version) {
-            setError('Version already installed');
-            return;
+            // Version is already installed - ask if user wants to reinstall
+            if (!confirm(`Version ${selectedVersion} is already installed. Replace and download again?`)) {
+                return;
+            }
+            
+            // Delete the version first
+            try {
+                addDownloadLog(`[INFO] Removing existing ${selectedVersion} to reinstall...`);
+                await invoke('delete_version', { version: selectedVersion });
+                addDownloadLog(`[OK] Removed ${selectedVersion}`);
+                await loadVersions();
+            } catch (err) {
+                setError(`Failed to remove version: ${err}`);
+                addDownloadLog(`[ERROR] Failed to remove: ${err}`);
+                return;
+            }
         }
 
         setInstallingVersion(selectedVersion);
@@ -650,7 +666,11 @@
                     onclick={installVersionHandler}
                     disabled={!selectedVersion || !!installingVersion}
                     class="bg-green-400 text-neutral-900 font-bold text-sm py-2 rounded-lg w-full flex items-center justify-center gap-2 shadow-lg shadow-green-400/30 hover:bg-green-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                    <i class="fi fi-rr-download"></i> Download & Install
+                    {#if selectedVersion && versions.find(v => v.id === selectedVersion && v.installed)}
+                        <i class="fi fi-rr-refresh"></i> Reinstall
+                    {:else}
+                        <i class="fi fi-rr-download"></i> Download & Install
+                    {/if}
                 </button>
             </div>
             {/if}
