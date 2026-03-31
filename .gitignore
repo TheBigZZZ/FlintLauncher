@@ -8,3 +8,6 @@ node_modules
 !.env.example
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Java runtimes - downloaded by build-with-java.bat
+src-tauri/resources/java-runtime/
