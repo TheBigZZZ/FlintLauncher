@@ -48,10 +48,23 @@ pub async fn check_for_updates(current_version: String) -> Result<UpdateInfo, St
         .await
         .map_err(|e| format!("Failed to fetch releases: {}", e))?;
 
+    // Check for HTTP errors (rate limits, API errors, etc.)
+    let status = response.status();
+    if !status.is_success() {
+        return Ok(UpdateInfo {
+            current_version,
+            latest_version: "unknown".to_string(),
+            update_available: false,
+            download_url: None,
+            release_name: None,
+            release_notes: Some(format!("Failed to check for updates: HTTP {} - may be rate limited", status)),
+        });
+    }
+
     let release: GitHubRelease = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse release data: {}", e))?;
+        .map_err(|e| format!("Failed to parse release data: {}. Check GitHub API rate limits.", e))?;
 
     // Skip prerelease and draft versions
     if release.prerelease || release.draft {

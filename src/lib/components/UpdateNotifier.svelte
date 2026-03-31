@@ -32,9 +32,9 @@
 
 	async function checkForUpdates() {
 		try {
-			const currentVersion = '0.1.0'; // TODO: Get from app config
+			const currentVersion = '0.2.0'; // Version matches tauri.conf.json
 			const info = await invoke<UpdateInfo>('check_for_updates', {
-				current_version: currentVersion
+				currentVersion: currentVersion
 			});
 
 			if (info.update_available && info.download_url) {

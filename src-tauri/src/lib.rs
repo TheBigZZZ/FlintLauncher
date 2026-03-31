@@ -2,6 +2,7 @@ mod accounts;
 mod launchprocess;
 mod libraryManagement;
 mod updater;
+mod window_manager;
 
 use accounts::{accountcreate, accountdelete, accountget, accountgetcurrent, accountsetcurrent};
 use launchprocess::launchprocess;
@@ -18,6 +19,10 @@ use updater::{check_for_updates, download_and_install_update};
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_fs::init())
+        .on_window_event(|window, event| {
+            window_manager::handle_window_event(window, event);
+        })
         .invoke_handler(tauri::generate_handler![
             accountcreate,
             accountget,
@@ -48,6 +53,8 @@ pub fn run() {
             reset_game_settings,
             check_for_updates,
             download_and_install_update,
+            window_manager::show_main_window,
+            window_manager::quit_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

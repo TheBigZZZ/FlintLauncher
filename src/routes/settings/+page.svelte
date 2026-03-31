@@ -67,6 +67,14 @@
         }
     }
 
+    async function quitLauncher() {
+        try {
+            await invoke('quit_app');
+        } catch (err) {
+            error = `Failed to quit: ${err}`;
+        }
+    }
+
     onMount();
 
     function onMount() {
@@ -181,6 +189,7 @@
                     class="text-white text-sm font-bold font-rubix focus:ring-0 transition-all duration-400 hover:text-green-400"
                 />
             </div>
+            <p class="text-gray-400 text-xs mb-3">When enabled, closing the launcher window will minimize it instead of quitting. Use the Quit Launcher button below to completely exit.</p>
         </div>
 
         <!-- Save and Reset Buttons -->
@@ -200,6 +209,14 @@
                 class="transition-all duration-400 active:bg-red-600 focus:ring-0 font-bold"
             >
                 Reset to Defaults
+            </Button>
+            <Button 
+                onclick={quitLauncher}
+                color="red" 
+                size="md" 
+                class="transition-all duration-400 active:bg-red-600 focus:ring-0 font-bold ml-auto"
+            >
+                Quit Launcher
             </Button>
         </div>
 

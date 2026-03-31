@@ -3,6 +3,8 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import UpdateNotifier from '$lib/components/UpdateNotifier.svelte';
+  import { setupTray } from '$lib/traySetup';
+  import { onMount } from 'svelte';
 
   let { children } = $props();
 
@@ -25,6 +27,16 @@
   const isActive = (path: string) => {
     return $page.url.pathname === path || $page.url.pathname.startsWith(path + '/');
   };
+
+  onMount(async () => {
+    try {
+      console.log('📱 Initializing system tray...');
+      await setupTray();
+      console.log('✅ Tray setup complete');
+    } catch (err) {
+      console.error('❌ Failed to setup tray:', err);
+    }
+  });
 
 </script>
 

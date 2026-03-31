@@ -10,6 +10,12 @@
     "fs:default",
     "fs:allow-app-read",
     "fs:allow-app-write",
-    "fs:allow-app-meta"
+    "fs:allow-app-meta",
+    "core:app:allow-default-window-icon",
+    "core:tray:allow-new",
+    "core:tray:allow-set-menu",
+    "core:tray:allow-set-tooltip",
+    "core:tray:allow-set-show-menu-on-left-click",
+    "core:tray:allow-set-icon"
   ]
 }
