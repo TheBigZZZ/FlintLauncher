@@ -2,12 +2,15 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { invoke } from '@tauri-apps/api/core';
+	import { listen } from '@tauri-apps/api/event';
 
 	interface UpdateInfo {
 		current_version: string;
 		latest_version: string;
 		release_notes: string | null;
 		update_available: boolean;
+		download_url?: string;
+		release_name?: string;
 	}
 
 	let showUpdateDialog = $state(false);
@@ -25,7 +28,7 @@
 		if (!browser) return;
 
 		try {
-			const version = '0.2.0'; // Should match tauri.conf.json version
+			const version = '0.3.0'; // Should match tauri.conf.json version and package.json
 			console.log('Checking for updates... current version:', version);
 			const result = await invoke<UpdateInfo>('check_for_updates', { currentVersion: version });
 
@@ -46,19 +49,22 @@
 	}
 
 	async function handleDownloadAndInstall() {
-		if (!updateInfo || !browser) return;
+		if (!updateInfo || !browser || !updateInfo.download_url) return;
 
 		isDownloading = true;
 		downloadStatus = 'Downloading update...';
 
-		try {
-			// For now, just show instructions to download from GitHub
-			// In the future, this could handle automated downloads
-			downloadStatus = 'Please download from: https://github.com/FaizeenHoque/FlintLauncher/releases';
+		// Listen for update-ready event
+		const unlistenUpdateReady = await listen('update-ready', () => {
+			downloadStatus = 'Update ready! Please restart the launcher to install.';
 			setTimeout(() => {
 				isDownloading = false;
 				closeDialog();
-			}, 3000);
+			}, 2000);
+		});
+
+		try {
+			await invoke('download_and_install_update', { downloadUrl: updateInfo.download_url });
 		} catch (error) {
 			downloadStatus = `Error: ${error}`;
 			isDownloading = false;

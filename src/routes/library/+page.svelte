@@ -142,6 +142,17 @@
             } else {
                 addDownloadLog('Refreshing version list...');
             }
+            
+            // Clean up any corrupted versions (those with incomplete downloads)
+            try {
+                const cleaned = await invoke<string[]>('clean_corrupted_versions');
+                if (cleaned.length > 0) {
+                    addDownloadLog(`[WARNING] Cleaned corrupted versions: ${cleaned.join(', ')}`);
+                }
+            } catch (err) {
+                console.warn('Failed to clean corrupted versions:', err);
+            }
+            
             versions = await invoke('fetch_available_versions');
             addDownloadLog(`[OK] Loaded ${versions.length} versions`);
             
@@ -574,6 +585,16 @@
                     <button
                         onclick={async () => {
                             await invoke('cancel_download');
+                            // Wait a bit for the download to actually stop
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                            // Delete the version directory when user cancels
+                            try {
+                                await invoke('delete_version', { version: installingVersion });
+                                addDownloadLog(`[INFO] Deleted incomplete version: ${installingVersion}`);
+                            } catch (err) {
+                                addDownloadLog(`[WARNING] Failed to delete version on cancel: ${err}`);
+                                console.warn('Failed to delete version on cancel:', err);
+                            }
                             addDownloadLog('');
                             addDownloadLog('[INFO] Download cancelled by user');
                         }}

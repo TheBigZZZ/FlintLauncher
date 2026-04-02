@@ -32,7 +32,16 @@
     return $page.url.pathname === path || $page.url.pathname.startsWith(path + '/');
   };
 
+  // Disable Ctrl+R refresh globally
+  function handleDisableRefresh(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+      e.preventDefault();
+    }
+  }
+
   onMount(async () => {
+    window.addEventListener('keydown', handleDisableRefresh);
+
     try {
       const javaStatus = await invoke<string>('check_java_status');
       console.log('[Layout] Java status:', javaStatus);
@@ -51,6 +60,16 @@
       console.error('[Layout] Java check failed:', err);
       // Default to ready if check fails
       bootstrapReady = true;
+    }
+    
+    // Clean up corrupted versions on startup
+    try {
+      const cleaned = await invoke<string[]>('clean_corrupted_versions');
+      if (cleaned.length > 0) {
+        console.log('[Layout] Cleaned corrupted version directories:', cleaned);
+      }
+    } catch (err) {
+      console.warn('[Layout] Failed to clean corrupted versions:', err);
     }
   });
 

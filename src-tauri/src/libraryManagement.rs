@@ -843,19 +843,94 @@ pub async fn get_installed_versions_info() -> Result<Vec<VersionInfo>, String> {
 pub async fn is_version_installed(version: String) -> Result<bool, String> {
     let flint_dir = get_flint_dir()?;
     let version_dir = flint_dir.join("versions").join(&version);
-    let version_json = version_dir.join(format!("{}.json", version));
-    let client_jar = version_dir.join(format!("{}.jar", version));
-    Ok(version_json.exists() && client_jar.exists())
+    
+    // ONLY accept versions with .installed sentinel file
+    // This ensures incomplete downloads are never shown as installed
+    Ok(is_version_valid(&version_dir))
 }
 
 #[tauri::command]
 pub async fn delete_version(version: String) -> Result<(), String> {
     let flint_dir = get_flint_dir()?;
     let version_dir = flint_dir.join("versions").join(&version);
-    if version_dir.exists() {
-        fs::remove_dir_all(&version_dir).map_err(|e| e.to_string())?;
+    
+    // Try to delete, with retries for Windows file locking issues
+    let max_attempts = 3;
+    let mut last_error = None;
+    
+    for attempt in 0..max_attempts {
+        if !version_dir.exists() {
+            println!("[DELETE] Version {} directory successfully removed", version);
+            return Ok(());
+        }
+        
+        match fs::remove_dir_all(&version_dir) {
+            Ok(_) => {
+                println!("[DELETE] Version {} deleted successfully on attempt {}", version, attempt + 1);
+                return Ok(());
+            }
+            Err(e) => {
+                last_error = Some(e.to_string());
+                if attempt < max_attempts - 1 {
+                    // Wait a bit before retrying (file handles might still be open)
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                }
+            }
+        }
     }
-    Ok(())
+    
+    eprintln!("[DELETE] Failed to delete version {} after {} attempts: {:?}", version, max_attempts, last_error);
+    Err(format!("Failed to delete version: {}", last_error.unwrap_or_default()))
+}
+
+/// Check if a version is valid using sentinel files:
+/// - .installed exists AND .installing does NOT exist = valid
+/// - .installing exists = incomplete, should be wiped
+/// - neither exists = not downloaded yet
+fn is_version_valid(version_dir: &PathBuf) -> bool {
+    let installed_sentinel = version_dir.join(".installed");
+    let installing_sentinel = version_dir.join(".installing");
+    
+    installed_sentinel.exists() && !installing_sentinel.exists()
+}
+
+/// Scan .flint/versions/ for corrupted versions (those with .installing file)
+/// and wipe them so they can be re-downloaded
+#[tauri::command]
+#[allow(dead_code)]
+pub async fn clean_corrupted_versions() -> Result<Vec<String>, String> {
+    let flint_dir = get_flint_dir()?;
+    let versions_dir = flint_dir.join("versions");
+    
+    if !versions_dir.exists() {
+        return Ok(vec![]);
+    }
+    
+    let mut cleaned: Vec<String> = vec![];
+    
+    for entry in fs::read_dir(&versions_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let version_dir = entry.path();
+        
+        if !version_dir.is_dir() {
+            continue;
+        }
+        
+        let installing_sentinel = version_dir.join(".installing");
+        if installing_sentinel.exists() {
+            let version_name = version_dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+            println!("[CLEANUP] Found corrupted version: {}, wiping...", version_name);
+            
+            // Wipe the entire version directory
+            if let Err(e) = fs::remove_dir_all(&version_dir) {
+                eprintln!("[CLEANUP] Failed to remove corrupted version {}: {}", version_name, e);
+            } else {
+                cleaned.push(version_name);
+            }
+        }
+    }
+    
+    Ok(cleaned)
 }
 
 #[tauri::command]
@@ -867,7 +942,25 @@ pub async fn install_version(
 
     let flint_dir = get_flint_dir()?;
     let version_dir = flint_dir.join("versions").join(&version);
+    
+    // Create .installing sentinel file before starting download
+    let installing_sentinel = version_dir.join(".installing");
+    let installed_sentinel = version_dir.join(".installed");
+    
+    // If already valid, skip installation
+    if is_version_valid(&version_dir) {
+        return Ok(format!("Version {} already installed", version));
+    }
+    
+    // Wipe any incomplete installation (if .installing exists)
+    if installing_sentinel.exists() || version_dir.exists() {
+        println!("[INSTALL] Removing incomplete/existing version directory for fresh install");
+        let _ = fs::remove_dir_all(&version_dir);
+    }
+    
+    // Recreate directory and create .installing sentinel
     fs::create_dir_all(&version_dir).map_err(|e| e.to_string())?;
+    fs::write(&installing_sentinel, "").map_err(|e| e.to_string())?;
 
     let manifest = get_manifest_cached().await?;
 
@@ -1106,6 +1199,11 @@ pub async fn install_version(
         }
     }
 
+    // Installation successful - create .installed sentinel and remove .installing
+    fs::remove_file(&installing_sentinel).ok(); // Best effort, may not exist if error handling removed it earlier
+    fs::write(&installed_sentinel, "").map_err(|e| e.to_string())?;
+    
+    println!("[INSTALL] Version {} installation complete with sentinel files", version);
     Ok(format!("Version {} installed successfully", version))
 }
 
