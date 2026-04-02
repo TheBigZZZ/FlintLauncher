@@ -117,6 +117,65 @@ fn check_show_signal() -> bool {
     false
 }
 
+/// Load the app icon from PNG file and convert to RGBA format for the system tray
+fn load_app_icon_rgba(icon_path: &std::path::Path) -> Option<Vec<u8>> {
+    // Try to load and decode the PNG file using the image crate
+    // Use the full crate path to avoid confusion with tauri::image
+    if let Ok(img) = ::image::open(icon_path) {
+        let rgba_img = img.to_rgba8();
+        let rgba_bytes = rgba_img.to_vec();
+        return Some(rgba_bytes);
+    }
+    None
+}
+
+/// Create a 32x32 RGBA icon (green background with white F letter) as a fallback
+fn create_fallback_icon_rgba() -> Vec<u8> {
+    // 32x32 pixels = 1024 pixels, each pixel is 4 bytes (RGBA)
+    let mut data = vec![0u8; 32 * 32 * 4];
+    
+    // Fill with base green color
+    for i in (0..data.len()).step_by(4) {
+        data[i] = 34;      // R - dark gray
+        data[i + 1] = 197; // G - green
+        data[i + 2] = 94;  // B - dark green
+        data[i + 3] = 255; // A - fully opaque
+    }
+    
+    // Create white F letter
+    // Top horizontal line
+    for y in 4..8 {
+        for x in 8..24 {
+            let idx = (y * 32 + x) * 4;
+            data[idx] = 255;     // R
+            data[idx + 1] = 255; // G
+            data[idx + 2] = 255; // B
+        }
+    }
+    
+    // Vertical line
+    for y in 8..28 {
+        for x in 8..12 {
+            let idx = (y * 32 + x) * 4;
+            data[idx] = 255;
+            data[idx + 1] = 255;
+            data[idx + 2] = 255;
+        }
+    }
+    
+    // Middle horizontal line
+    for y in 14..18 {
+        for x in 8..20 {
+            let idx = (y * 32 + x) * 4;
+            data[idx] = 255;
+            data[idx + 1] = 255;
+            data[idx + 2] = 255;
+        }
+    }
+    
+    data
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Try to acquire the instance lock
@@ -136,6 +195,41 @@ pub fn run() {
         })
         .setup(|app| {
             let app_handle = app.handle().clone();
+            
+            // Setup system tray icon
+            if let Ok(resource_path) = app.path().resource_dir() {
+                let icon_path = resource_path.join("icons/32x32.png");
+                
+                // Try to load the actual icon, fall back to programmatic one if it fails
+                let icon_rgba = load_app_icon_rgba(&icon_path)
+                    .unwrap_or_else(|| create_fallback_icon_rgba());
+                
+                // Create tray menu items with explicit IDs
+                let show_item = tauri::menu::MenuItem::with_id(app, "show", "Show Window", true, None::<String>)?;
+                let quit_item = tauri::menu::MenuItem::with_id(app, "quit", "Quit Launcher", true, None::<String>)?;
+                
+                let tray_menu = tauri::menu::Menu::with_items(app, &[&show_item, &quit_item])?;
+                
+                let icon = tauri::image::Image::new_owned(icon_rgba, 32, 32);
+                let _tray = tauri::tray::TrayIconBuilder::new()
+                    .on_menu_event(|app, event| {
+                        match event.id.as_ref() {
+                            "show" => {
+                                if let Some(window) = app.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                            "quit" => {
+                                let _ = app.exit(0);
+                            }
+                            _ => {}
+                        }
+                    })
+                    .icon(icon)
+                    .menu(&tray_menu)
+                    .build(app)?;
+            }
             
             // Get the main window and ensure it's visible and focused
             if let Some(window) = app.get_webview_window("main") {
