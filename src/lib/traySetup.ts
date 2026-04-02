@@ -57,8 +57,8 @@ function createGreenIconRGBA(): Uint8Array {
 
 export async function setupTray() {
   try {
-    // Prevent multiple tray instances from being created
-    if (trayInitialized) {
+    // Prevent multiple tray instances from being created using local flag
+    if (trayInitialized && trayInstance) {
       console.log('ℹ️ System tray already initialized, skipping duplicate setup');
       return trayInstance;
     }
@@ -95,6 +95,7 @@ export async function setupTray() {
     });
 
     trayInstance = await TrayIcon.new({
+      id: 'flint-launcher',
       icon: {
         rgba: createGreenIconRGBA(),
         width: 32,
@@ -102,6 +103,15 @@ export async function setupTray() {
       },
       menu,
       tooltip: 'Flint Launcher',
+      action: async () => {
+        // Clicking the tray icon brings the app to focus
+        console.log('💡 Tray icon clicked: bringing app to focus');
+        try {
+          await invoke('show_main_window');
+        } catch (err) {
+          console.error('Failed to show window:', err);
+        }
+      },
     });
 
     trayInitialized = true;

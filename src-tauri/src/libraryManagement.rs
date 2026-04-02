@@ -12,16 +12,24 @@ use tokio::sync::Semaphore;
 use std::sync::Arc;
 use once_cell::sync::Lazy;
 use std::sync::atomic::{AtomicBool, Ordering};
+use futures::stream::StreamExt;
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
     Client::builder()
-        .timeout(std::time::Duration::from_secs(300))
-        .connect_timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(120))
+        .connect_timeout(std::time::Duration::from_secs(20))
+        .pool_max_idle_per_host(2)
         .build()
         .unwrap_or_else(|_| Client::new())
 });
 
 static DOWNLOAD_CANCEL_FLAG: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
+
+// Simple response cache: (data, timestamp)
+static MANIFEST_CACHE: Lazy<Mutex<(Value, u64)>> = Lazy::new(|| Mutex::new((Value::Null, 0)));
+const MANIFEST_CACHE_TTL_SECS: u64 = 3600; // Cache for 1 hour
 
 fn get_client() -> &'static Client {
     &HTTP_CLIENT
@@ -33,6 +41,48 @@ fn should_cancel_download() -> bool {
 
 fn reset_cancel_flag() {
     DOWNLOAD_CANCEL_FLAG.store(false, Ordering::Relaxed);
+}
+
+async fn get_manifest_cached() -> Result<Value, String> {
+    // Check cache
+    {
+        let cache = MANIFEST_CACHE.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        if cache.0 != Value::Null && (now - cache.1) < MANIFEST_CACHE_TTL_SECS {
+            return Ok(cache.0.clone());
+        }
+    }
+
+    // Fetch fresh
+    let client = get_client();
+    let response = client
+        .get(MANIFEST_URL)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch manifest: {}", e))?;
+
+    let manifest: Value = {
+        let text = response.text().await.map_err(|e| e.to_string())?;
+        serde_json::from_str(&text).map_err(|e| format!("Failed to parse manifest: {}", e))?
+    };
+
+    // Cache it
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    
+    {
+        let mut cache = MANIFEST_CACHE.lock().unwrap();
+        cache.0 = manifest.clone();
+        cache.1 = now;
+    }
+
+    Ok(manifest)
 }
 
 const FLINT_DIR: &str = ".flint";
@@ -194,15 +244,18 @@ async fn download_file(
 ) -> Result<(), String> {
     if path.exists() {
         if let Some(expected) = expected_sha1 {
-            let content = tokio_fs::read(path).await.map_err(|e| e.to_string())?;
-            let mut hasher = Sha1::new();
-            hasher.update(&content);
-            let hash = format!("{:x}", hasher.finalize());
-            if hash == expected {
-                return Ok(());
+            match tokio_fs::read(path).await {
+                Ok(content) => {
+                    let mut hasher = Sha1::new();
+                    hasher.update(&content);
+                    let hash = format!("{:x}", hasher.finalize());
+                    if hash == expected {
+                        return Ok(());
+                    }
+                }
+                Err(_) => {} // File exists but can't read, re-download
             }
         } else {
-            // No sha1, trust existing file
             return Ok(());
         }
     }
@@ -213,11 +266,17 @@ async fn download_file(
             .map_err(|e| e.to_string())?;
     }
 
+    // Try up to 3 times with exponential backoff
     for attempt in 0..3 {
         match download_with_retry(url, path).await {
             Ok(_) => return Ok(()),
             Err(e) if attempt == 2 => return Err(format!("Failed after 3 attempts: {}", e)),
-            Err(_) => continue,
+            Err(_) => {
+                if attempt < 2 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100 * (attempt as u64 + 1))).await;
+                }
+                continue;
+            }
         }
     }
 
@@ -237,13 +296,13 @@ async fn download_with_retry(url: &str, path: &PathBuf) -> Result<(), String> {
     }
 
     let mut file = std::fs::File::create(path).map_err(|e| e.to_string())?;
-    let content = response
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
-
-    file.write_all(&content)
-        .map_err(|e| format!("Failed to write file: {}", e))?;
+    let mut stream = response.bytes_stream();
+    
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| format!("Failed to stream response: {}", e))?;
+        file.write_all(&bytes)
+            .map_err(|e| format!("Failed to write file: {}", e))?;
+    }
 
     Ok(())
 }
@@ -284,7 +343,7 @@ async fn download_files_parallel(tasks: Vec<DownloadTask>, app: tauri::AppHandle
     }
 
     let total = tasks.len();
-    let semaphore = Arc::new(Semaphore::new(24));
+    let semaphore = Arc::new(Semaphore::new(8));
     let mut join_set = tokio::task::JoinSet::new();
     let downloaded_counter = Arc::new(tokio::sync::Mutex::new(0usize));
 
@@ -300,10 +359,10 @@ async fn download_files_parallel(tasks: Vec<DownloadTask>, app: tauri::AppHandle
         let permit = semaphore.clone().acquire_owned().await.map_err(|e| e.to_string())?;
         let app_clone = app.clone();
         let counter = downloaded_counter.clone();
+        let filename = task.name.clone();
 
         join_set.spawn(async move {
             let _guard = permit;
-            let filename = task.name.clone();
 
             match download_file(&task.url, &task.path, task.sha1.as_deref()).await {
                 Ok(()) => {
@@ -368,32 +427,28 @@ async fn download_files_parallel(tasks: Vec<DownloadTask>, app: tauri::AppHandle
 
 #[tauri::command]
 pub async fn fetch_available_versions() -> Result<Vec<VersionInfo>, String> {
-    let client = get_client();
-    let response = client
-        .get(MANIFEST_URL)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch manifest: {}", e))?;
-
-    let manifest: Value = {
-        let text = response.text().await.map_err(|e| e.to_string())?;
-        serde_json::from_str(&text).map_err(|e| format!("Failed to parse manifest: {}", e))?
-    };
+    let manifest = get_manifest_cached().await?;
 
     let installed = get_installed_versions().await.unwrap_or_default();
-    let installed_set: std::collections::HashSet<_> = installed.iter().cloned().collect();
+    let installed_set: std::collections::HashSet<_> = installed.iter().map(|s| s.as_str()).collect();
 
     let versions = manifest["versions"]
         .as_array()
         .ok_or("No versions in manifest")?
         .iter()
-        .map(|v| VersionInfo {
-            id: v["id"].as_str().unwrap_or("").to_string(),
-            version_type: v["type"].as_str().unwrap_or("").to_string(),
-            release_time: v["releaseTime"].as_str().unwrap_or("").to_string(),
-            installed: installed_set.contains(v["id"].as_str().unwrap_or("")),
+        .filter_map(|v| {
+            let id = v["id"].as_str()?;
+            if !id.is_empty() {
+                Some(VersionInfo {
+                    id: id.to_string(),
+                    version_type: v["type"].as_str().unwrap_or("").to_string(),
+                    release_time: v["releaseTime"].as_str().unwrap_or("").to_string(),
+                    installed: installed_set.contains(id),
+                })
+            } else {
+                None
+            }
         })
-        .filter(|v| !v.id.is_empty())
         .collect();
 
     Ok(versions)
@@ -531,17 +586,7 @@ pub async fn install_version(
     let version_dir = flint_dir.join("versions").join(&version);
     fs::create_dir_all(&version_dir).map_err(|e| e.to_string())?;
 
-    let client = get_client();
-    let manifest_response = client
-        .get(MANIFEST_URL)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch manifest: {}", e))?;
-
-    let manifest: Value = {
-        let text = manifest_response.text().await.map_err(|e| e.to_string())?;
-        serde_json::from_str(&text).map_err(|e| format!("Failed to parse manifest: {}", e))?
-    };
+    let manifest = get_manifest_cached().await?;
 
     let version_url = manifest["versions"]
         .as_array()
@@ -551,6 +596,7 @@ pub async fn install_version(
         .and_then(|v| v["url"].as_str())
         .ok_or("Version not found")?;
 
+    let client = get_client();
     let version_response = client
         .get(version_url)
         .send()

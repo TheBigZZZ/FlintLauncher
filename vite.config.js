@@ -30,14 +30,38 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
-
-  test: {
-    environment: 'jsdom'
+  
+  // Build optimization for production
+  build: {
+    target: "ES2020",
+    minify: "terser",
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true,
+      },
+    },
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          // Only chunk node_modules that aren't external
+          if (id.includes('node_modules') && !id.includes('@tauri-apps/api')) {
+            const match = id.match(/node_modules\/([^\/]+)/);
+            if (match) {
+              return match[1];
+            }
+          }
+        },
+      },
+    },
+    // Reduce chunk size warnings and optimize output
+    chunkSizeWarningLimit: 1000,
+    reportCompressedSize: false,
+    cssCodeSplit: true,
+    sourcemap: false,
   },
 
-  build: {
-    rollupOptions: {
-      external: ['@tauri-apps/api/process', '@tauri-apps/plugin-updater']
-    }
+  test: {
+    environment: "jsdom"
   }
 }));

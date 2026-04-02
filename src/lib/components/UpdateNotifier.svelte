@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
+	import { invoke } from '@tauri-apps/api/core';
 
 	interface UpdateInfo {
 		current_version: string;
 		latest_version: string;
 		release_notes: string | null;
+		update_available: boolean;
 	}
 
 	let showUpdateDialog = $state(false);
@@ -23,16 +25,20 @@
 		if (!browser) return;
 
 		try {
-			const { check } = await import('@tauri-apps/plugin-updater');
-			const update = await check();
+			const version = '0.2.0'; // Should match tauri.conf.json version
+			console.log('Checking for updates... current version:', version);
+			const result = await invoke<UpdateInfo>('check_for_updates', { currentVersion: version });
 
-			if (update?.available) {
-				updateInfo = {
-					current_version: update.currentVersion,
-					latest_version: update.version,
-					release_notes: update.body
-				};
+			console.log('Update check result:', result);
+			if (result.update_available) {
+				updateInfo = result;
 				showUpdateDialog = true;
+				console.log('Update available! Showing dialog.');
+			} else {
+				console.log('No update available. Current:', result.current_version, 'Latest:', result.latest_version);
+				if (result.release_notes) {
+					console.log('Info:', result.release_notes);
+				}
 			}
 		} catch (error) {
 			console.error('Failed to check for updates:', error);
@@ -46,13 +52,13 @@
 		downloadStatus = 'Downloading update...';
 
 		try {
-			const { check } = await import('@tauri-apps/plugin-updater');
-			const update = await check();
-			if (update?.available) {
-				await update.downloadAndInstall();
-				downloadStatus = 'Update installed. Restarting...';
-				// The updater automatically restarts the app after install
-			}
+			// For now, just show instructions to download from GitHub
+			// In the future, this could handle automated downloads
+			downloadStatus = 'Please download from: https://github.com/FaizeenHoque/FlintLauncher/releases';
+			setTimeout(() => {
+				isDownloading = false;
+				closeDialog();
+			}, 3000);
 		} catch (error) {
 			downloadStatus = `Error: ${error}`;
 			isDownloading = false;

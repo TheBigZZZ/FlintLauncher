@@ -28,6 +28,8 @@
     let dropdownOpen = $state(false);
     let loading = $state(true);
     let searchQuery: string = $state('');
+    let versionPage = $state(0);
+    let versionsPerPage = 30;
     let showProfileModal = $state(false);
     let profileName = $state('');
     let profileSelectedVersion = $state('');

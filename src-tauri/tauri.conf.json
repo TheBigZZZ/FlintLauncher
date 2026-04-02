@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "flint-launcher",
+  "productName": "Flint Launcher",
   "version": "0.2.0",
   "identifier": ".flint",
   "build": {
@@ -15,7 +15,8 @@
         "title": "Flint Launcher",
         "width": 1000,
         "height": 600,
-        "resizable": false
+        "resizable": true,
+        "visible": true
       }
     ],
     "security": {
@@ -33,15 +34,5 @@
       "icons/icon.ico"
     ],
     "resources": ["resources/**/*", "icons/**/*"]
-  },
-  "plugins": {
-    "updater": {
-      "active": true,
-      "endpoints": [
-        "https://github.com/user/flint-launcher/releases/latest/download/latest.json"
-      ],
-      "dialog": false,
-      "pubkey": "MCowBQYDK2VwAyEA/EKm/mDJDEXSyqIebF25WchD12wT3ygHn1djTh63pao="
-    }
   }
 }

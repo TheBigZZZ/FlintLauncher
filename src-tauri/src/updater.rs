@@ -3,7 +3,7 @@ use serde_json::json;
 use tauri::Emitter;
 
 const GITHUB_OWNER: &str = "FaizeenHoque";
-const GITHUB_REPO: &str = "flint-launcher";
+const GITHUB_REPO: &str = "FlintLauncher";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateInfo {

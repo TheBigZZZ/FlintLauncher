@@ -1,6 +1,5 @@
 <script lang="ts">
     import { invoke } from '@tauri-apps/api/core';
-    import { Label, Input, Button, Toggle } from "flowbite-svelte";
 
     interface GameSettings {
         vanilla_ram_mb: number;
@@ -103,7 +102,7 @@
         {:else}
         <!-- Allocate Memory -->
         <div class="flex flex-col gap-2">
-            <Label class="text-green-400 font-bold text-sm">Allocate Memory (Default/Vanilla Minecraft)</Label>
+            <label class="text-green-400 font-bold text-sm">Allocate Memory (Default/Vanilla Minecraft)</label>
             <div class="flex items-center gap-4">
                 <input 
                     type="range" 
@@ -120,42 +119,42 @@
 
         <!-- Custom JVM Arguments -->
         <div class="flex flex-col gap-2">
-            <Label class="text-green-400 font-bold text-sm">Custom JVM Arguments</Label>
-            <Input 
+            <label class="text-green-400 font-bold text-sm">Custom JVM Arguments</label>
+            <input 
                 bind:value={settings.custom_jvm_args}
                 placeholder="e.g., -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
                 autocomplete="off"
-                class="bg-neutral-800 border-none text-white text-sm transition-all duration-400 hover:ring-1 ring-green-400"
+                class="bg-neutral-800 border-none text-white text-sm transition-all duration-400 hover:ring-1 ring-green-400 px-3 py-2 rounded"
             />
             <p class="text-gray-400 text-xs">Separate arguments with spaces</p>
         </div>
 
         <!-- Game Resolution -->
         <div class="flex flex-col gap-2">
-            <Label class="text-green-400 font-bold text-sm">Default Game Resolution</Label>
+            <label class="text-green-400 font-bold text-sm">Default Game Resolution</label>
             <div class="flex gap-4">
                 <div class="flex-1">
-                    <Label class="text-white text-xs font-bold mb-1">Width</Label>
-                    <Input 
+                    <label class="text-white text-xs font-bold mb-1 block">Width</label>
+                    <input 
                         bind:value={settings.game_width}
                         type="number"
                         min="640"
                         max="3840"
                         placeholder="854"
                         autocomplete="off"
-                        class="bg-neutral-800 border-none text-white text-sm transition-all duration-400 hover:ring-1 ring-green-400"
+                        class="w-full bg-neutral-800 border-none text-white text-sm transition-all duration-400 hover:ring-1 ring-green-400 px-3 py-2 rounded"
                     />
                 </div>
                 <div class="flex-1">
-                    <Label class="text-white text-xs font-bold mb-1">Height</Label>
-                    <Input 
+                    <label class="text-white text-xs font-bold mb-1 block">Height</label>
+                    <input 
                         bind:value={settings.game_height}
                         type="number"
                         min="480"
                         max="2160"
                         placeholder="480"
                         autocomplete="off"
-                        class="bg-neutral-800 border-none text-white text-sm transition-all duration-400 hover:ring-1 ring-green-400"
+                        class="w-full bg-neutral-800 border-none text-white text-sm transition-all duration-400 hover:ring-1 ring-green-400 px-3 py-2 rounded"
                     />
                 </div>
             </div>
@@ -164,29 +163,29 @@
         <!-- Toggle Options -->
         <div class="flex flex-col gap-3 pt-3">
             <div class="flex items-center justify-between">
-                <Label class="text-white text-sm font-bold font-rubix">Fullscreen on Launch</Label>
-                <Toggle 
+                <label class="text-white text-sm font-bold">Fullscreen on Launch</label>
+                <input 
+                    type="checkbox" 
                     bind:checked={settings.fullscreen}
-                    color="green" 
-                    class="text-white text-sm font-bold font-rubix focus:ring-0 duration-400 transition-all hover:text-green-400"
+                    class="w-4 h-4 accent-green-400 cursor-pointer"
                 />
             </div>
             
             <div class="flex items-center justify-between">
-                <Label class="text-white text-sm font-bold font-rubix">Close Launcher When Game Starts</Label>
-                <Toggle 
+                <label class="text-white text-sm font-bold">Close Launcher When Game Starts</label>
+                <input 
+                    type="checkbox" 
                     bind:checked={settings.close_launcher_on_start}
-                    color="green" 
-                    class="text-white text-sm font-bold font-rubix focus:ring-0 transition-all duration-400 hover:text-green-400"
+                    class="w-4 h-4 accent-green-400 cursor-pointer"
                 />
             </div>
             
             <div class="flex items-center justify-between">
-                <Label class="text-white text-sm font-bold font-rubix">Keep Launcher in Background</Label>
-                <Toggle 
+                <label class="text-white text-sm font-bold">Keep Launcher in Background</label>
+                <input 
+                    type="checkbox" 
                     bind:checked={settings.keep_launcher_background}
-                    color="green" 
-                    class="text-white text-sm font-bold font-rubix focus:ring-0 transition-all duration-400 hover:text-green-400"
+                    class="w-4 h-4 accent-green-400 cursor-pointer"
                 />
             </div>
             <p class="text-gray-400 text-xs mb-3">When enabled, closing the launcher window will minimize it instead of quitting. Use the Quit Launcher button below to completely exit.</p>
@@ -194,30 +193,24 @@
 
         <!-- Save and Reset Buttons -->
         <div class="flex gap-2 pt-4">
-            <Button 
+            <button 
                 onclick={saveSettings}
-                color="green" 
-                size="md" 
-                class="transition-all duration-400 active:bg-green-600 focus:ring-0 font-bold"
+                class="bg-green-600 hover:bg-green-700 active:bg-green-800 text-white font-bold py-2 px-4 rounded transition-all duration-200"
             >
                 Save Settings
-            </Button>
-            <Button 
+            </button>
+            <button 
                 onclick={() => showResetConfirm = true}
-                color="red" 
-                size="md" 
-                class="transition-all duration-400 active:bg-red-600 focus:ring-0 font-bold"
+                class="bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold py-2 px-4 rounded transition-all duration-200"
             >
                 Reset to Defaults
-            </Button>
-            <Button 
+            </button>
+            <button 
                 onclick={quitLauncher}
-                color="red" 
-                size="md" 
-                class="transition-all duration-400 active:bg-red-600 focus:ring-0 font-bold ml-auto"
+                class="bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold py-2 px-4 rounded transition-all duration-200 ml-auto"
             >
                 Quit Launcher
-            </Button>
+            </button>
         </div>
 
         {#if showResetConfirm}
@@ -226,22 +219,18 @@
                 <h2 class="text-xl text-red-400 font-bold mb-4">Reset Settings?</h2>
                 <p class="text-gray-300 mb-6">Are you sure you want to reset all settings to their default values? This cannot be undone.</p>
                 <div class="flex gap-3">
-                    <Button 
+                    <button 
                         onclick={resetSettings}
-                        color="red" 
-                        size="sm"
-                        class="transition-all duration-400 active:bg-red-600 focus:ring-0 font-bold"
+                        class="bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold py-2 px-4 rounded transition-all duration-200"
                     >
                         Yes, Reset
-                    </Button>
-                    <Button 
+                    </button>
+                    <button 
                         onclick={() => showResetConfirm = false}
-                        color="green" 
-                        size="sm"
-                        class="transition-all duration-400 focus:ring-0 font-bold"
+                        class="bg-green-600 hover:bg-green-700 active:bg-green-800 text-white font-bold py-2 px-4 rounded transition-all duration-200"
                     >
                         Cancel
-                    </Button>
+                    </button>
                 </div>
             </div>
         </div>

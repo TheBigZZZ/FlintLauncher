@@ -26,7 +26,7 @@ A lightweight, modern and fast Minecraft launcher built with Tauri and Svelte.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/flint-launcher.git
+git clone https://github.com/FaizeenHoque/FlintLauncher.git
 cd flint-launcher
 
 # Install dependencies

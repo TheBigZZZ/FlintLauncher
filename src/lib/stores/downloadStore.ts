@@ -31,10 +31,17 @@ export function setInstallStatus(status: string) {
 }
 
 export function addDownloadLog(log: string) {
-    downloadStore.update(state => ({
-        ...state,
-        downloadLogs: [...state.downloadLogs, log]
-    }));
+    downloadStore.update(state => {
+        const newLogs = [...state.downloadLogs, log];
+        // Keep only last 300 logs to prevent memory bloat
+        if (newLogs.length > 300) {
+            newLogs.shift();
+        }
+        return {
+            ...state,
+            downloadLogs: newLogs
+        };
+    });
 }
 
 export function setDownloadLogs(logs: string[]) {

@@ -16,6 +16,8 @@
     "core:tray:allow-set-menu",
     "core:tray:allow-set-tooltip",
     "core:tray:allow-set-show-menu-on-left-click",
-    "core:tray:allow-set-icon"
+    "core:tray:allow-set-icon",
+    "dialog:default",
+    "opener:allow-open-url"
   ]
 }

@@ -1,5 +1,19 @@
 use tauri::WindowEvent;
 use tauri::Manager;
+use std::fs;
+use std::path::PathBuf;
+
+/// Get the lock file path for single instance checking
+fn get_lock_file_path() -> PathBuf {
+    let app_data = std::env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(&app_data).join(".flint").join("app.lock")
+}
+
+/// Clean up the lock file when the app exits
+fn cleanup_lock_file() {
+    let lock_path = get_lock_file_path();
+    let _ = fs::remove_file(lock_path);
+}
 
 /// Handle window events, specifically the close request
 pub fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
@@ -61,6 +75,7 @@ pub async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
 /// Command to force quit the app
 #[tauri::command]
 pub async fn quit_app(app: tauri::AppHandle) -> Result<(), String> {
+    cleanup_lock_file();
     app.exit(0);
     Ok(())
 }
