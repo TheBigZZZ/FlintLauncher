@@ -205,30 +205,32 @@ pub fn run() {
                     .unwrap_or_else(|| create_fallback_icon_rgba());
                 
                 // Create tray menu items with explicit IDs
-                let show_item = tauri::menu::MenuItem::with_id(app, "show", "Show Window", true, None::<String>)?;
-                let quit_item = tauri::menu::MenuItem::with_id(app, "quit", "Quit Launcher", true, None::<String>)?;
+                let show_item = tauri::menu::MenuItem::with_id(app, "show_window", "Show Window", true, None::<String>);
+                let quit_item = tauri::menu::MenuItem::with_id(app, "quit_launcher", "Quit Launcher", true, None::<String>);
                 
-                let tray_menu = tauri::menu::Menu::with_items(app, &[&show_item, &quit_item])?;
-                
-                let icon = tauri::image::Image::new_owned(icon_rgba, 32, 32);
-                let _tray = tauri::tray::TrayIconBuilder::new()
-                    .on_menu_event(|app, event| {
-                        match event.id.as_ref() {
-                            "show" => {
-                                if let Some(window) = app.get_webview_window("main") {
-                                    let _ = window.show();
-                                    let _ = window.set_focus();
+                if let (Ok(show), Ok(quit)) = (show_item, quit_item) {
+                    if let Ok(tray_menu) = tauri::menu::Menu::with_items(app, &[&show, &quit]) {
+                        let icon = tauri::image::Image::new_owned(icon_rgba, 32, 32);
+                        let _tray = tauri::tray::TrayIconBuilder::new()
+                            .on_menu_event(|app, event| {
+                                match event.id.as_ref() {
+                                    "show_window" => {
+                                        if let Some(window) = app.get_webview_window("main") {
+                                            let _ = window.show();
+                                            let _ = window.set_focus();
+                                        }
+                                    }
+                                    "quit_launcher" => {
+                                        let _ = app.exit(0);
+                                    }
+                                    _ => {}
                                 }
-                            }
-                            "quit" => {
-                                let _ = app.exit(0);
-                            }
-                            _ => {}
-                        }
-                    })
-                    .icon(icon)
-                    .menu(&tray_menu)
-                    .build(app)?;
+                            })
+                            .icon(icon)
+                            .menu(&tray_menu)
+                            .build(app);
+                    }
+                }
             }
             
             // Get the main window and ensure it's visible and focused
